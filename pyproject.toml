@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sgw"
+version = "0.3.0"
+description = "Sampled Gromov-Wasserstein optimal transport solver — pure PyTorch, scalable, differentiable"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Sijie Chen", email = "chensj16@stanford.edu" },
+]
+maintainers = [
+    { name = "Sijie Chen", email = "chensj16@stanford.edu" },
+]
+keywords = [
+    "optimal-transport",
+    "gromov-wasserstein",
+    "graph-matching",
+    "manifold-alignment",
+    "sinkhorn",
+    "pytorch",
+    "single-cell",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Typing :: Typed",
+]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "scikit-learn>=1.2",
+    "torch>=2.0",
+    "joblib>=1.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "matplotlib>=3.6", "pot>=0.9"]
+docs = ["sphinx>=7.0", "sphinx-rtd-theme>=2.0"]
+
+[project.urls]
+Homepage = "https://github.com/chansigit/sgw"
+Documentation = "https://chansigit.github.io/sgw/"
+Repository = "https://github.com/chansigit/sgw"
+Issues = "https://github.com/chansigit/sgw/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sgw*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
