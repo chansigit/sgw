@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.svg" alt="TorchGW logo" width="560">
+  <img src="docs/logo.svg" alt="TorchGW logo" width="600">
 </p>
 
 # TorchGW — Sampled Gromov-Wasserstein
