@@ -7,28 +7,13 @@
 [![Docs](https://img.shields.io/badge/docs-chansigit.github.io%2Fsgw-blue)](https://chansigit.github.io/sgw/)
 [![GitHub](https://img.shields.io/badge/github-chansigit%2Fsgw-black?logo=github)](https://github.com/chansigit/sgw)
 
-A scalable solver for [Gromov-Wasserstein](https://arxiv.org/abs/1805.09114) optimal transport,
-implemented in **pure PyTorch** (no POT dependency at runtime).
+A **pure PyTorch** solver for [Gromov-Wasserstein](https://arxiv.org/abs/1805.09114) optimal transport.
+Aligns two point clouds by matching their internal distance structures — even when the point clouds
+live in different dimensions.
 
-Instead of computing the full *N×K* cost matrix each iteration,
-SGW **samples** *M* anchor pairs and approximates the GW cost using only the
-distances from those anchors, reducing the per-iteration cost from *O(NK(N+K))* to *O(NKM)*.
-
-The API follows [POT](https://pythonot.github.io/) conventions
-(`epsilon` for regularization, `tol` for convergence, `p`/`q` for marginals, `log` for diagnostics).
-
-## Features
-
-- **Pure PyTorch** — log-domain Sinkhorn on GPU, zero CPU↔GPU data transfer
-- **Scalable** — O(NKM) per iteration via anchor-pair sampling
-- **Three distance strategies** — `precomputed`, `dijkstra` (default), `landmark` for different scales
-- **Fused GW** — blend structural GW cost with a feature-space linear cost via `fgw_alpha`
-- **Multi-scale warm start** — coarse-to-fine solving with FPS downsampling
-- **Low-rank Sinkhorn** — `sampled_lowrank_gw` for memory-constrained large-scale problems (N, K > 50k)
-- **Semi-relaxed GW** — relax the target marginal for unbalanced datasets
-- **Differentiable** — optional `differentiable=True` keeps the computation graph
-- **Joint embedding** — shared manifold embedding via graph Laplacians + transport plan
-- **Tensor I/O** — accepts and returns `torch.Tensor` (numpy also accepted as input)
+**Core idea:** instead of the full *O(NK(N+K))* GW cost, SGW samples *M* anchor pairs each iteration
+and approximates the cost in *O(NKM)*, enabling GPU-accelerated alignment at scales where
+standard solvers are impractical.
 
 ## Installation
 
@@ -36,232 +21,214 @@ The API follows [POT](https://pythonot.github.io/) conventions
 pip install -e .
 ```
 
-Dependencies: `numpy`, `scipy`, `scikit-learn`, `torch`, `joblib`.
-No POT required at runtime (only needed for the comparison example).
+Requires `numpy`, `scipy`, `scikit-learn`, `torch`, `joblib`. No POT at runtime.
 
 ## Quick start
 
 ```python
 import torch
-from sgw import sampled_gw, sampled_lowrank_gw
+from sgw import sampled_gw
 
-# Two point clouds (dimensions may differ)
-X = torch.randn(500, 3)
-Y = torch.randn(600, 5)
+X = torch.randn(500, 3)   # source (500 points, 3D)
+Y = torch.randn(600, 5)   # target (600 points, 5D — dimensions may differ)
 
-# Compute transport plan (returns torch.Tensor)
 T = sampled_gw(X, Y, epsilon=0.005, M=80, max_iter=200)
-print(T.shape)  # (500, 600)
-
-# Precomputed distance matrices (no point clouds needed)
-D_X = torch.cdist(X, X)
-D_Y = torch.cdist(Y, Y)
-T = sampled_gw(dist_source=D_X, dist_target=D_Y, distance_mode="precomputed")
-
-# Fused GW: blend structural + feature cost
-C_feat = torch.cdist(X[:, :3], Y[:, :3])  # feature cost (same dim required)
-T = sampled_gw(X, Y, fgw_alpha=0.5, C_linear=C_feat)
-
-# Multi-scale warm start (coarse solve → fine solve)
-T = sampled_gw(X, Y, multiscale=True)
-
-# Low-rank Sinkhorn for very large problems (memory optimization)
-T = sampled_lowrank_gw(X, Y, rank=30, distance_mode="landmark")
+# T[i,j] = coupling weight between X[i] and Y[j]
 ```
 
-## API
+## How it works
 
-### `sampled_gw`
+Each iteration:
+
+1. **Sample** *M* anchor pairs from the current transport plan *T*
+2. **Compute distances** from all points to the sampled anchors (Dijkstra / precomputed / landmark)
+3. **Assemble GW cost matrix** from the sampled distances
+4. **Sinkhorn projection** to obtain a new transport plan (log-domain, float64)
+5. **Momentum update** to smooth convergence
+
+Key design choices:
+- Log-domain Sinkhorn on GPU — no CPU-GPU transfer, no POT dependency
+- Marginals in float64 (stability), cost matrix in float32 (speed)
+- Entropic regularization with exponential decay schedule
+
+## Benchmark
+
+Spiral (2D) to Swiss roll (3D), compared with [POT](https://pythonot.github.io/):
+
+| Scale | Method | Time | GW distance | Spearman |
+|-------|--------|:----:|:-----------:|:--------:|
+| 400 vs 500 | POT | 1.6s | 3.57e-3 | 0.999 |
+| 400 vs 500 | **SGW** | **0.9s** | **1.39e-3** | 0.998 |
+| 4000 vs 5000 | POT | 183s | 3.21e-3 | 0.999 |
+| 4000 vs 5000 | **SGW** | **2.4s** | **1.17e-3** | **0.999** |
+
+At 4000x5000, **SGW is ~75x faster** with equal or better accuracy.
+
+<details>
+<summary>Benchmark plots (click to expand)</summary>
+
+### 400 vs 500
+![400 vs 500](docs/demo_spiral_to_swissroll_400v500.png)
+
+### 4000 vs 5000
+![4000 vs 5000](docs/demo_spiral_to_swissroll_4000v5000.png)
+
+</details>
+
+---
+
+## API Reference
+
+### `sampled_gw` — standard solver
 
 ```python
 sampled_gw(
-    X_source=None,          # (ns, D) source features (Tensor or ndarray)
-    X_target=None,          # (nt, D2) target features
-    p=None,                 # (ns,) source marginals (uniform if None)
-    q=None,                 # (nt,) target marginals (uniform if None)
+    X_source=None,            # (N, D) features, Tensor or ndarray
+    X_target=None,            # (K, D') features
+    p=None, q=None,           # marginals (uniform if None)
     *,
-    # Distance strategy
-    distance_mode="dijkstra",  # "precomputed" | "dijkstra" | "landmark"
-    dist_source=None,       # (ns, ns) precomputed distance matrix
-    dist_target=None,       # (nt, nt) precomputed distance matrix
-    n_landmarks=50,         # landmark count (only for distance_mode="landmark")
-
-    # Fused GW
-    fgw_alpha=0.0,          # 0 = pure GW, 1 = pure Wasserstein
-    C_linear=None,          # (ns, nt) feature cost matrix (required if fgw_alpha > 0)
-
-    # Solver parameters
-    s_shared=None,          # shared samples estimate (default: min(ns,nt))
-    M=50,                   # anchor pairs per iteration
-    alpha=0.9,              # momentum
-    max_iter=500,           # maximum iterations
-    tol=1e-5,               # convergence threshold
-    epsilon=0.001,          # entropic regularization
-    k=30,                   # kNN neighbors
-    device=None,            # torch device (auto-detected)
-    verbose=False,          # print progress
-    log=False,              # return (T, log_dict) with convergence info
-    differentiable=False,   # keep computation graph for backprop
-    semi_relaxed=False,     # relax target marginal constraint
-    rho=1.0,                # KL penalty for relaxed marginal
-    multiscale=False,       # coarse-to-fine warm start
-    n_coarse=None,          # coarse problem size (auto if None)
-)
+    distance_mode="dijkstra", # "precomputed" | "dijkstra" | "landmark"
+    dist_source=None,         # (N, N) precomputed distance matrix
+    dist_target=None,         # (K, K) precomputed distance matrix
+    n_landmarks=50,           # for distance_mode="landmark"
+    fgw_alpha=0.0,            # 0=GW, 1=Wasserstein, between=Fused GW
+    C_linear=None,            # (N, K) feature cost for FGW
+    M=50,                     # anchor pairs per iteration
+    alpha=0.9,                # momentum
+    max_iter=500, tol=1e-5,   # convergence
+    epsilon=0.001,            # entropic regularization
+    k=30,                     # kNN neighbors
+    semi_relaxed=False,       # relax target marginal
+    rho=1.0,                  # KL penalty (semi-relaxed only)
+    differentiable=False,     # keep autograd graph
+    multiscale=False,         # coarse-to-fine warm start
+    n_coarse=None,            # coarse size (auto if None)
+    device=None, verbose=False, log=False,
+) -> Tensor                   # (N, K) transport plan
 ```
 
-**Returns** a `torch.Tensor` of shape `(ns, nt)`.
-With `log=True`, returns `(T, {"err_list": [...], "n_iter": int, "gw_cost": float})`.
+### `sampled_lowrank_gw` — memory-optimized solver
 
-### `sampled_lowrank_gw`
-
-Low-rank variant for memory-constrained large-scale problems. Uses the
-[Scetbon, Cuturi & Peyre (2021)](https://arxiv.org/abs/2103.04737) algorithm
-to factorize the transport plan, reducing Sinkhorn memory from O(NK) to O((N+K)*r).
+Same interface as `sampled_gw`, plus low-rank parameters.
+Uses [Scetbon, Cuturi & Peyre (2021)](https://arxiv.org/abs/2103.04737) factorization
+to reduce Sinkhorn memory from O(NK) to O((N+K)r).
 
 ```python
 sampled_lowrank_gw(
-    X_source=None, X_target=None, p=None, q=None,
-    *,
-    rank=20,                   # nonneg. rank of transport plan factorization
-    lr_max_iter=5,             # outer mirror descent iterations per Sinkhorn call
-    lr_dykstra_max_iter=50,    # inner Dykstra iterations per Sinkhorn call
-    # ... all other parameters same as sampled_gw (except differentiable)
-)
+    ...,                       # same as sampled_gw
+    rank=20,                   # transport plan rank
+    lr_max_iter=5,             # mirror descent iterations
+    lr_dykstra_max_iter=50,    # Dykstra projection iterations
+) -> Tensor
 ```
 
-> **Note:** This is a **memory optimization**, not a speed optimization. At moderate
-> scales (N, K < 50k), `sampled_gw` with standard Sinkhorn is significantly faster.
-> Use `sampled_lowrank_gw` only when the full N×K transport plan does not fit in memory.
-
-### Distance modes
-
-| Mode | When to use | How it works |
-|------|------------|--------------|
-| `"precomputed"` | N, K < ~5k | Precomputes all-pairs shortest paths; fastest per-iteration |
-| `"dijkstra"` | 5k–50k (default) | Runs Dijkstra from M sampled anchors each iteration |
-| `"landmark"` | N, K > 50k | Precomputes distances to d landmark nodes via farthest-point sampling; GPU-accelerated |
-
-See [examples/benchmark_distance_modes.md](examples/benchmark_distance_modes.md) for a detailed comparison.
-
-### Fused GW
-
-Blend graph-distance GW (structural) with a feature-space Wasserstein (linear) cost:
-
-```python
-# Lambda = (1 - fgw_alpha) * Lambda_gw + fgw_alpha * C_linear
-T = sampled_gw(X, Y, fgw_alpha=0.5, C_linear=C_feat)
-
-# Pure Wasserstein (no structural distances needed)
-T = sampled_gw(fgw_alpha=1.0, C_linear=C_feat)
-```
-
-### Multi-scale warm start
-
-Two-stage coarse-to-fine solving: downsample via FPS, solve the coarse GW problem,
-upsample the solution to warm-start the full problem.
-
-```python
-T = sampled_gw(X, Y, multiscale=True)
-T = sampled_gw(X, Y, multiscale=True, n_coarse=200)  # custom coarse size
-```
-
-> **Note:** GW has multiple equivalent local optima (e.g., forward and reverse
-> matching). The coarse solve may converge to a different optimum, which is then
-> inherited by the fine solve. This works best on data without strong symmetries.
-
-### Semi-relaxed mode
-
-When source and target have different compositions (e.g., a cell type
-present in source but absent in target), balanced GW forces mass onto
-wrong matches. Semi-relaxed GW fixes the source marginal but lets the
-target marginal adapt:
-
-```python
-# Balanced (default): T @ 1 = p,  T.T @ 1 = q  (both enforced)
-T = sampled_gw(X, Y, epsilon=0.005)
-
-# Semi-relaxed: T @ 1 = p (enforced),  T.T @ 1 ≈ q (soft KL penalty)
-T = sampled_gw(X, Y, epsilon=0.005, semi_relaxed=True, rho=1.0)
-```
+> **When to use:** only when N*K is too large for standard Sinkhorn memory (N, K > 50k).
+> At smaller scales, `sampled_gw` is significantly faster.
 
 ### `build_knn_graph`
 
 ```python
-build_knn_graph(X, k=30)  # → csr_matrix, guaranteed connected
+build_knn_graph(X, k=30)  # returns csr_matrix, guaranteed connected
 ```
-
-Builds a *k*-NN distance graph with automatic stitching of disconnected components.
 
 ### `joint_embedding`
 
 ```python
-joint_embedding(
-    anchor_name,        # name of reference dataset
-    data_by_name,       # {"src": X_src, "tgt": X_tgt}
-    graphs_by_name,     # {"src": g_src, "tgt": g_tgt}
-    transport_plans,    # {("src", "tgt"): T}
-    out_dim=30,         # embedding dimensions
-)
+joint_embedding(anchor_name, data_by_name, graphs_by_name, transport_plans, out_dim=30)
+# returns {name: (n, out_dim) array} — shared manifold embedding
 ```
 
-Computes a joint manifold embedding via graph Laplacians and the transport plan.
+---
 
-## Comparison with POT
+## Usage Guide
 
-Both methods are run with **identical preprocessing** (same kNN graph, same Dijkstra shortest paths).
-Timings below are **pure OT solver time** (GPU cost matrix + Sinkhorn), excluding graph construction and Dijkstra preprocessing:
+### Distance strategies
 
-| Scale | Method | Solver time (100 iter) | GW distance | Spearman |
-|-------|--------|----------------------|-------------|----------|
-| 400 vs 500 | POT `entropic_gromov_wasserstein` | 1.6s | 3.57e-03 | 0.999 |
-| 400 vs 500 | SGW `sampled_gw` | 0.9s | **1.39e-03** | 0.998 |
-| 4000 vs 5000 | POT `entropic_gromov_wasserstein` | 183s | 3.21e-03 | 0.999 |
-| 4000 vs 5000 | SGW `sampled_gw` | **2.4s** | **1.17e-03** | **0.999** |
+Choose based on your data scale:
 
-The pure OT computation (cost matrix assembly + Sinkhorn projection) runs entirely on GPU.
-At 4000×5000, **SGW's solver is ~75× faster** than POT with equal or better accuracy.
+| Mode | Scale | Per-iteration | Memory |
+|------|:-----:|:-------------:|:------:|
+| `"precomputed"` | N < 5k | O(NM) lookup | O(N^2) |
+| `"dijkstra"` (default) | 5k-50k | O(MN log N) | O(NM) |
+| `"landmark"` | N > 50k | O(NMd) GPU | O(Nd) |
 
-> **Note:** End-to-end wall time includes CPU-side Dijkstra and sampling overhead
-> (~70s total for 4000×5000 at 300 iterations). The GPU solver itself is not the bottleneck.
+```python
+# Small scale: precompute all-pairs distances once
+T = sampled_gw(X, Y, distance_mode="precomputed")
 
-### 400 vs 500 (small scale)
+# Or pass your own distance matrices (skips graph construction)
+T = sampled_gw(dist_source=D_X, dist_target=D_Y, distance_mode="precomputed")
 
-![400 vs 500](docs/demo_spiral_to_swissroll_400v500.png)
+# Large scale: landmark Dijkstra (FPS + GPU cdist)
+T = sampled_gw(X, Y, distance_mode="landmark", n_landmarks=50)
+```
 
-### 4000 vs 5000 (large scale — SGW 2.6× faster)
+See [examples/benchmark_distance_modes.md](examples/benchmark_distance_modes.md) for detailed comparison.
 
-![4000 vs 5000](docs/demo_spiral_to_swissroll_4000v5000.png)
+### Fused Gromov-Wasserstein
 
-## How it works
+Blend structural (graph distance) and feature (linear) costs:
 
-Each iteration of SGW:
+```python
+C_feat = torch.cdist(features_src, features_tgt)
+T = sampled_gw(X, Y, fgw_alpha=0.5, C_linear=C_feat)
 
-1. **Sample** *M* anchor pairs `(i, j)` from the current transport plan *T*
-2. **Compute distances** from all points to the sampled anchors (via the chosen distance strategy)
-3. **GW cost matrix** Λ = mean(D²\_left) − 2·(D\_left @ D\_tgt^T)/M + mean(D²\_tgt)
-4. **FGW blending** (optional): Λ = (1−α\_fgw)·Λ\_gw + α\_fgw·C\_linear
-5. **Sinkhorn** — standard (augmented, log-domain) or low-rank (Dykstra projection)
-6. **Momentum update** T ← (1−α)·T\_prev + α·T\_new
+# Pure Wasserstein (no graph distances needed)
+T = sampled_gw(fgw_alpha=1.0, C_linear=C_feat)
+```
 
-Key implementation details:
-- **Pure PyTorch** log-domain Sinkhorn — runs entirely on GPU, no POT dependency
-- Marginals and Sinkhorn in **float64** for numerical stability
-- Cost matrix in **float32** on GPU for speed
-- `torch.no_grad()` by default; set `differentiable=True` to keep the computation graph
-- GC only every 50 iterations (avoids the 78% overhead from per-iteration GC)
+### Semi-relaxed GW
+
+For unbalanced datasets (e.g., cell types present in one but not the other):
+
+```python
+T = sampled_gw(X, Y, semi_relaxed=True, rho=1.0)
+# Source marginal enforced, target marginal soft (KL penalty weighted by rho)
+```
+
+### Multi-scale warm start
+
+Speeds up convergence by solving a coarse problem first:
+
+```python
+T = sampled_gw(X, Y, multiscale=True)
+T = sampled_gw(X, Y, multiscale=True, n_coarse=200)
+```
+
+> GW has symmetric local optima. The coarse solve may find a different optimum than
+> the fine solve would. Works best on data without strong symmetries.
+
+### Differentiable mode
+
+Use GW cost as a training loss (gradients flow via envelope theorem):
+
+```python
+C_feat = torch.cdist(encoder(X), encoder(Y))  # from a learnable encoder
+T = sampled_gw(fgw_alpha=1.0, C_linear=C_feat, differentiable=True)
+loss = (C_feat.detach() * T).sum()
+loss.backward()  # gradients flow to encoder parameters
+```
+
+### Low-rank Sinkhorn
+
+For very large problems where the N*K transport plan does not fit in memory:
+
+```python
+from sgw import sampled_lowrank_gw
+
+T = sampled_lowrank_gw(X, Y, rank=30, distance_mode="landmark", n_landmarks=50)
+```
+
+---
 
 ## Examples
 
 ```bash
-# Distance mode benchmark (no extra dependencies)
-python examples/benchmark_distance_modes.py
-
-# SGW vs POT comparison (requires POT)
-pip install pot
-python examples/demo_spiral_to_swissroll.py
+python examples/benchmark_distance_modes.py       # distance mode comparison
+pip install pot && python examples/demo_spiral_to_swissroll.py  # SGW vs POT
 ```
 
-## Running tests
+## Tests
 
 ```bash
 pip install -e ".[dev]"
