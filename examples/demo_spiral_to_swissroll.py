@@ -1,4 +1,4 @@
-"""Compare SGW vs POT entropic Gromov-Wasserstein on spiral → Swiss roll.
+"""Compare TorchGW vs POT entropic Gromov-Wasserstein on spiral → Swiss roll.
 
 Both methods use identical preprocessing (same kNN graphs, same Dijkstra
 shortest-path distances). Runs at two scales: 400/500 and 4000/5000.
@@ -23,7 +23,7 @@ import ot
 from scipy.sparse.csgraph import dijkstra
 from scipy.stats import spearmanr
 
-from sgw import sampled_gw, build_knn_graph
+from torchgw import sampled_gw, build_knn_graph
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -101,7 +101,7 @@ def run_experiment(n_src, n_tgt, k, run_pot=True):
         res.update(T_pot=None, t_pot=np.nan, gw_pot=np.nan, rho_pot=np.nan)
         print(f"  POT:  skipped (would need {n_src}x{n_src} + {n_tgt}x{n_tgt} matrices)")
 
-    # SGW
+    # TorchGW
     np.random.seed(42)
     t0 = time.time()
     T_sgw = sampled_gw(
@@ -116,7 +116,7 @@ def run_experiment(n_src, n_tgt, k, run_pot=True):
     rho_sgw, _ = spearmanr(a_src, a_tgt[T_sgw.argmax(axis=1)])
     res.update(T_sgw=T_sgw, t_sgw=t_sgw, gw_sgw=gw_sgw, rho_sgw=rho_sgw,
                C1=C1, C2=C2)
-    print(f"  SGW:  {t_sgw:>8.2f}s  |  GW={gw_sgw:.4e}  |  ρ={rho_sgw:.4f}")
+    print(f"  TorchGW:  {t_sgw:>8.2f}s  |  GW={gw_sgw:.4e}  |  ρ={rho_sgw:.4f}")
 
     return res
 
@@ -165,7 +165,7 @@ def plot_comparison(res, filename):
     plans = []
     if has_pot:
         plans.append((T_pot, "POT Entropic GW", res["gw_pot"], res["t_pot"]))
-    plans.append((T_sgw, "SGW (Sampled GW)", res["gw_sgw"], res["t_sgw"]))
+    plans.append((T_sgw, "TorchGW (Sampled GW)", res["gw_sgw"], res["t_sgw"]))
 
     for col, (T, label, gw, t) in enumerate(plans):
         ax = axes[1, col]
@@ -180,7 +180,7 @@ def plot_comparison(res, filename):
     match_data = []
     if has_pot:
         match_data.append((a_tgt[T_pot.argmax(axis=1)], "POT", res["rho_pot"]))
-    match_data.append((a_tgt[T_sgw.argmax(axis=1)], "SGW", res["rho_sgw"]))
+    match_data.append((a_tgt[T_sgw.argmax(axis=1)], "TorchGW", res["rho_sgw"]))
 
     for col, (matched, label, rho) in enumerate(match_data):
         ax = axes[2, col]
@@ -193,7 +193,7 @@ def plot_comparison(res, filename):
         plt.colorbar(sc, ax=ax, label="matched angle (rad)", shrink=0.8)
 
     fig.suptitle(
-        f"SGW vs POT  —  Spiral ({n_src}) → Swiss Roll ({n_tgt})"
+        f"TorchGW vs POT  —  Spiral ({n_src}) → Swiss Roll ({n_tgt})"
         f"  |  kNN k={k} + Dijkstra",
         fontsize=14, fontweight="bold", y=0.995,
     )
@@ -221,5 +221,5 @@ print("-" * 78)
 for label, r in [("400 vs 500", res_small), ("4000 vs 5000", res_large)]:
     if r["T_pot"] is not None:
         print(f"{label:<16} {'POT':<10} {r['t_pot']:>10.2f} {r['gw_pot']:>14.4e} {r['rho_pot']:>12.4f}")
-    print(f"{label:<16} {'SGW':<10} {r['t_sgw']:>10.2f} {r['gw_sgw']:>14.4e} {r['rho_sgw']:>12.4f}")
+    print(f"{label:<16} {'TorchGW':<10} {r['t_sgw']:>10.2f} {r['gw_sgw']:>14.4e} {r['rho_sgw']:>12.4f}")
 print("=" * 78)

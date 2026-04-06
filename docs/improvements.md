@@ -1,4 +1,4 @@
-# SGW Improvement Roadmap
+# TorchGW Improvement Roadmap
 
 Updated: v0.3.0 (2026-04-06)
 
@@ -64,7 +64,7 @@ Implemented as a separate function `sampled_lowrank_gw` (not a parameter on
 - Matching quality is good (Spearman >= 0.995 on Swiss roll) despite higher
   transport cost (inherent to the low-rank constraint + different entropy objective)
 - Default parameters: `rank=20, lr_max_iter=5, lr_dykstra_max_iter=50`
-  (tuned for use as an inner step in the SGW loop)
+  (tuned for use as an inner step in the TorchGW loop)
 
 Only use when N*K is too large for standard Sinkhorn memory (e.g., N, K > 50k).
 
@@ -79,7 +79,7 @@ Input accepts both `torch.Tensor` and `np.ndarray`. Output is `torch.Tensor`.
 
 ### Internal Refactoring — DONE (v0.3.0)
 
-Extracted shared SGW loop into `_sgw_loop`, `_prepare_inputs`, `_maybe_multiscale`
+Extracted shared TorchGW loop into `_gw_loop`, `_prepare_inputs`, `_maybe_multiscale`
 so that `sampled_gw` and `sampled_lowrank_gw` share preprocessing and iteration
 logic, differing only in the Sinkhorn step.
 

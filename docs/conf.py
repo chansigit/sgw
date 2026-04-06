@@ -1,10 +1,10 @@
-"""Sphinx configuration for SGW documentation."""
+"""Sphinx configuration for TorchGW documentation."""
 import os
 import sys
 
 sys.path.insert(0, os.path.abspath(".."))
 
-project = "SGW"
+project = "TorchGW"
 copyright = "2026, Sijie Chen"
 author = "Sijie Chen"
 release = "0.3.0"

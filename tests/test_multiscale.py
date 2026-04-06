@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import pytest
-from sgw._multiscale import fps_downsample, upsample_plan
+from torchgw._multiscale import fps_downsample, upsample_plan
 
 
 def test_fps_downsample_shapes():

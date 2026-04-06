@@ -1,9 +1,9 @@
 import numpy as np
 import torch
 
-from sgw._graph import build_knn_graph
-from sgw._sampling import sample_pairs_from_plan
-from sgw._utils import get_device, maybe_gc
+from torchgw._graph import build_knn_graph
+from torchgw._sampling import sample_pairs_from_plan
+from torchgw._utils import get_device, maybe_gc
 
 
 # ── Sinkhorn core (shared by both no_grad and differentiable paths) ──────
@@ -124,7 +124,7 @@ def _prepare_inputs(
     Returns (X_source, X_target, dist_source, dist_target, C_linear_t,
              N, K, provider, device).
     """
-    from sgw._distances import DijkstraProvider, PrecomputedProvider, LandmarkProvider
+    from torchgw._distances import DijkstraProvider, PrecomputedProvider, LandmarkProvider
 
     X_source = _to_tensor(X_source)
     X_target = _to_tensor(X_target)
@@ -192,7 +192,7 @@ def _prepare_inputs(
     return X_source, X_target, p, q, dist_source, dist_target, C_linear_t, N, K, provider, device
 
 
-def _sgw_loop(
+def _gw_loop(
     *,
     N: int,
     K: int,
@@ -348,7 +348,7 @@ def _maybe_multiscale(
     if not multiscale or X_source is None or X_target is None:
         return None
 
-    from sgw._multiscale import fps_downsample, upsample_plan
+    from torchgw._multiscale import fps_downsample, upsample_plan
 
     _n_coarse = n_coarse if n_coarse is not None else min(500, N // 4, K // 4)
     _n_coarse = max(_n_coarse, 10)
@@ -510,7 +510,7 @@ def sampled_gw(
     sinkhorn_fn = _sinkhorn_differentiable if differentiable else _sinkhorn_torch
 
     with ctx:
-        T_out, err_list, n_iter, gw_cost_val = _sgw_loop(
+        T_out, err_list, n_iter, gw_cost_val = _gw_loop(
             N=N, K=K, provider=provider,
             p_real=p_real, q_real=q_real, T_init=T_init,
             sinkhorn_fn=sinkhorn_fn, use_augmented=True,
@@ -597,7 +597,7 @@ def sampled_lowrank_gw(
     T : Tensor (ns, nt)
     log_dict : dict (only if log=True)
     """
-    from sgw._lowrank import sinkhorn_lowrank
+    from torchgw._lowrank import sinkhorn_lowrank
 
     (X_source, X_target, p, q, dist_source, dist_target, C_linear_t,
      N, K, provider, device) = _prepare_inputs(
@@ -649,7 +649,7 @@ def sampled_lowrank_gw(
         warnings.warn("semi_relaxed is not yet supported for low-rank Sinkhorn and will be ignored")
 
     with torch.no_grad():
-        T_out, err_list, n_iter, gw_cost_val = _sgw_loop(
+        T_out, err_list, n_iter, gw_cost_val = _gw_loop(
             N=N, K=K, provider=provider,
             p_real=p_real, q_real=q_real, T_init=T_init,
             sinkhorn_fn=_lr_sinkhorn, use_augmented=False,

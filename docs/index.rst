@@ -1,10 +1,10 @@
-SGW — Sampled Gromov-Wasserstein
+TorchGW — Sampled Gromov-Wasserstein
 ================================
 
 .. image:: logo.svg
    :width: 480
    :align: center
-   :alt: SGW logo
+   :alt: TorchGW logo
 
 |
 
@@ -12,7 +12,7 @@ A scalable solver for `Gromov-Wasserstein <https://arxiv.org/abs/1805.09114>`_
 optimal transport, implemented in **pure PyTorch** (no POT dependency at runtime).
 
 Instead of computing the full :math:`N \times K` cost matrix each iteration,
-SGW **samples** :math:`M` anchor pairs and runs Dijkstra from those sources only,
+TorchGW **samples** :math:`M` anchor pairs and runs Dijkstra from those sources only,
 reducing the per-iteration cost from :math:`O(NK(N+K))` to :math:`O(NKM)`.
 
 .. toctree::

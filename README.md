@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/logo.svg" alt="SGW logo" width="560">
+  <img src="docs/logo.svg" alt="TorchGW logo" width="560">
 </p>
 
-# SGW — Sampled Gromov-Wasserstein
+# TorchGW — Sampled Gromov-Wasserstein
 
 [![Docs](https://img.shields.io/badge/docs-chansigit.github.io%2Fsgw-blue)](https://chansigit.github.io/sgw/)
 [![GitHub](https://img.shields.io/badge/github-chansigit%2Fsgw-black?logo=github)](https://github.com/chansigit/sgw)
@@ -11,7 +11,7 @@ A **pure PyTorch** solver for [Gromov-Wasserstein](https://arxiv.org/abs/1805.09
 Aligns two point clouds by matching their internal distance structures — even when the point clouds
 live in different dimensions.
 
-**Core idea:** instead of the full *O(NK(N+K))* GW cost, SGW samples *M* anchor pairs each iteration
+**Core idea:** instead of the full *O(NK(N+K))* GW cost, TorchGW samples *M* anchor pairs each iteration
 and approximates the cost in *O(NKM)*, enabling GPU-accelerated alignment at scales where
 standard solvers are impractical.
 
@@ -27,7 +27,7 @@ Requires `numpy`, `scipy`, `scikit-learn`, `torch`, `joblib`. No POT at runtime.
 
 ```python
 import torch
-from sgw import sampled_gw
+from torchgw import sampled_gw
 
 X = torch.randn(500, 3)   # source (500 points, 3D)
 Y = torch.randn(600, 5)   # target (600 points, 5D — dimensions may differ)
@@ -58,11 +58,11 @@ Spiral (2D) to Swiss roll (3D), compared with [POT](https://pythonot.github.io/)
 | Scale | Method | Time | GW distance | Spearman |
 |-------|--------|:----:|:-----------:|:--------:|
 | 400 vs 500 | POT | 1.6s | 3.57e-3 | 0.999 |
-| 400 vs 500 | **SGW** | **0.9s** | **1.39e-3** | 0.998 |
+| 400 vs 500 | **TorchGW** | **0.9s** | **1.39e-3** | 0.998 |
 | 4000 vs 5000 | POT | 183s | 3.21e-3 | 0.999 |
-| 4000 vs 5000 | **SGW** | **2.4s** | **1.17e-3** | **0.999** |
+| 4000 vs 5000 | **TorchGW** | **2.4s** | **1.17e-3** | **0.999** |
 
-At 4000x5000, **SGW is ~75x faster** with equal or better accuracy.
+At 4000x5000, **TorchGW is ~75x faster** with equal or better accuracy.
 
 <details>
 <summary>Benchmark plots (click to expand)</summary>
@@ -214,7 +214,7 @@ loss.backward()  # gradients flow to encoder parameters
 For very large problems where the N*K transport plan does not fit in memory:
 
 ```python
-from sgw import sampled_lowrank_gw
+from torchgw import sampled_lowrank_gw
 
 T = sampled_lowrank_gw(X, Y, rank=30, distance_mode="landmark", n_landmarks=50)
 ```
@@ -225,7 +225,7 @@ T = sampled_lowrank_gw(X, Y, rank=30, distance_mode="landmark", n_landmarks=50)
 
 ```bash
 python examples/benchmark_distance_modes.py       # distance mode comparison
-pip install pot && python examples/demo_spiral_to_swissroll.py  # SGW vs POT
+pip install pot && python examples/demo_spiral_to_swissroll.py  # TorchGW vs POT
 ```
 
 ## Tests

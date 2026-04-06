@@ -18,12 +18,12 @@ Unlike Wasserstein distance, GW does not require the two spaces to share
 a common metric — it compares **intra-domain distances**, making it suitable
 for cross-domain alignment (e.g., different modalities, different dimensionalities).
 
-Sampled GW (SGW)
+Sampled GW (TorchGW)
 -----------------
 
 Standard entropic GW computes a cost matrix of size :math:`N \times K` at
 each iteration using all :math:`N \times N` and :math:`K \times K` pairwise
-distances. SGW reduces this by **sampling** :math:`M` anchor pairs per iteration.
+distances. TorchGW reduces this by **sampling** :math:`M` anchor pairs per iteration.
 
 Each iteration:
 
@@ -57,7 +57,7 @@ Complexity
 
    * - Component
      - Standard GW
-     - SGW
+     - TorchGW
    * - Cost matrix per iter
      - :math:`O(NK(N+K))`
      - :math:`O(NKM)`
@@ -68,13 +68,13 @@ Complexity
      - :math:`O(NK)`
      - :math:`O(NK)` (same)
 
-With :math:`M \ll \min(N, K)`, SGW achieves sub-quadratic scaling in the
+With :math:`M \ll \min(N, K)`, TorchGW achieves sub-quadratic scaling in the
 number of Dijkstra computations while maintaining the same Sinkhorn cost.
 
 Log-Domain Sinkhorn
 -------------------
 
-SGW uses a pure-PyTorch log-domain Sinkhorn implementation for numerical
+TorchGW uses a pure-PyTorch log-domain Sinkhorn implementation for numerical
 stability with small regularization :math:`\varepsilon`:
 
 .. math::
@@ -98,7 +98,7 @@ This is useful when source and target have different compositions.
 Differentiable Sinkhorn
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-When ``differentiable=True``, SGW uses a custom ``torch.autograd.Function``
+When ``differentiable=True``, TorchGW uses a custom ``torch.autograd.Function``
 that:
 
 1. Runs the Sinkhorn loop in forward **without** recording the computation graph

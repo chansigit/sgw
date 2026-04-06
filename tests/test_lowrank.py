@@ -1,6 +1,6 @@
 import torch
 import pytest
-from sgw._lowrank import sinkhorn_lowrank
+from torchgw._lowrank import sinkhorn_lowrank
 
 
 def test_lowrank_returns_correct_shape():
@@ -53,7 +53,7 @@ def test_lowrank_transport_cost_reasonable():
     entropy on T). The solutions differ even at full rank, so we compare
     transport costs rather than plans directly.
     """
-    from sgw._solver import _sinkhorn_torch
+    from torchgw._solver import _sinkhorn_torch
     N, K = 20, 25
     p = torch.ones(N, dtype=torch.float64) / N
     q = torch.ones(K, dtype=torch.float64) / K

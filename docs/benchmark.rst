@@ -29,7 +29,7 @@ projection), excluding graph construction, Dijkstra, and sampling overhead.
      - 3.57e-03
      - 0.999
    * - 400 vs 500
-     - SGW ``sampled_gw``
+     - TorchGW ``sampled_gw``
      - **0.9s**
      - **1.39e-03**
      - 0.998
@@ -39,12 +39,12 @@ projection), excluding graph construction, Dijkstra, and sampling overhead.
      - 3.21e-03
      - 0.999
    * - 4000 vs 5000
-     - SGW ``sampled_gw``
+     - TorchGW ``sampled_gw``
      - **2.4s**
      - **1.17e-03**
      - **0.999**
 
-At 4000×5000, SGW's pure OT solver is **~75× faster** than POT.
+At 4000×5000, TorchGW's pure OT solver is **~75× faster** than POT.
 
 Time Breakdown (4000 vs 5000, 100 iterations)
 ----------------------------------------------

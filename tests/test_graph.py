@@ -2,7 +2,7 @@ import numpy as np
 from scipy.sparse import issparse
 from scipy.sparse.csgraph import connected_components
 
-from sgw._graph import build_knn_graph
+from torchgw._graph import build_knn_graph
 
 
 def test_build_knn_graph_returns_sparse(two_clusters):

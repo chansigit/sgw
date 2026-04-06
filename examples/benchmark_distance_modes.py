@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from scipy.stats import spearmanr
 
-from sgw import sampled_gw
+from torchgw import sampled_gw
 
 
 # ── Data generators ──────────────────────────────────────────────────────

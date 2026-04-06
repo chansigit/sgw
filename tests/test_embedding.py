@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
-from sgw._graph import build_knn_graph
-from sgw._solver import sampled_gw
-from sgw._embedding import joint_embedding
+from torchgw._graph import build_knn_graph
+from torchgw._solver import sampled_gw
+from torchgw._embedding import joint_embedding
 
 
 @pytest.fixture

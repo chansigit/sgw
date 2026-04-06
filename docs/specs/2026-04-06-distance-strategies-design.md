@@ -102,7 +102,7 @@ Raise ValueError if shapes are inconsistent.
 
 ### Distance provider pattern
 
-New file: `sgw/_distances.py`
+New file: `torchgw/_distances.py`
 
 Three provider classes, all implementing the same interface:
 
@@ -162,12 +162,12 @@ on device.
 
 | File | Change |
 |------|--------|
-| `sgw/_distances.py` | **New**. Three provider classes. |
-| `sgw/_solver.py` | Add new parameters. Replace inline Dijkstra with provider call. Add FGW blending. Change input/output to tensor. Remove graph_source/graph_target. |
-| `sgw/_graph.py` | No change (still used internally by providers). |
-| `sgw/_sampling.py` | No change. |
-| `sgw/_embedding.py` | No change. |
-| `sgw/__init__.py` | No change to exports. |
+| `torchgw/_distances.py` | **New**. Three provider classes. |
+| `torchgw/_solver.py` | Add new parameters. Replace inline Dijkstra with provider call. Add FGW blending. Change input/output to tensor. Remove graph_source/graph_target. |
+| `torchgw/_graph.py` | No change (still used internally by providers). |
+| `torchgw/_sampling.py` | No change. |
+| `torchgw/_embedding.py` | No change. |
+| `torchgw/__init__.py` | No change to exports. |
 | `tests/test_solver.py` | Update for tensor output. Add tests for each distance mode and FGW. |
 | `tests/test_spiral_swissroll.py` | Update for tensor output. |
 

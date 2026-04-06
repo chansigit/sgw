@@ -12,7 +12,7 @@ _DIJKSTRA_PARALLEL_THRESHOLD = 64
 
 
 class DistanceProvider(Protocol):
-    """Interface for distance providers used by the SGW solver."""
+    """Interface for distance providers used by the TorchGW solver."""
 
     def get_distances(
         self,

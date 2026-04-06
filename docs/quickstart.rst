@@ -7,7 +7,7 @@ Basic Usage
 .. code-block:: python
 
    import numpy as np
-   from sgw import sampled_gw, build_knn_graph
+   from torchgw import sampled_gw, build_knn_graph
 
    # Two point clouds (dimensions may differ)
    X = np.random.randn(500, 3).astype(np.float32)
@@ -81,7 +81,7 @@ After computing a transport plan, embed both datasets into a shared space:
 
 .. code-block:: python
 
-   from sgw import joint_embedding
+   from torchgw import joint_embedding
 
    emb = joint_embedding(
        anchor_name="tgt",

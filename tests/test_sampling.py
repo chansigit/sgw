@@ -1,5 +1,5 @@
 import numpy as np
-from sgw._sampling import sample_pairs_from_plan
+from torchgw._sampling import sample_pairs_from_plan
 
 
 def test_sample_pairs_returns_correct_count():

@@ -3,7 +3,7 @@
 ## Background
 
 Standard variance reduction techniques (e.g., control variates with gradient tables)
-cannot be directly applied to SGW because:
+cannot be directly applied to TorchGW because:
 1. Sampling distribution (T) is non-stationary
 2. A gradient table would require O(NK) entries with O(N² log N) Dijkstra cost
 3. Algorithm is stochastic proximal (Sinkhorn), not stochastic gradient
@@ -63,7 +63,7 @@ The GW cost matrix decomposes as:
 
 ## Idea 3: Landmark-Cached Variance Reduction
 
-**Complexity**: High. The most principled variance reduction approach for SGW.
+**Complexity**: High. The most principled variance reduction approach for TorchGW.
 
 Select L landmark nodes, pre-compute ALL Dijkstra distances from landmarks (one-time O(L·N log N)). Then:
 
@@ -80,7 +80,7 @@ Select L landmark nodes, pre-compute ALL Dijkstra distances from landmarks (one-
 
 ## References
 
-- Kerdoncuff et al. (2021) — Sampled Gromov Wasserstein (original SGW framework)
+- Kerdoncuff et al. (2021) — Sampled Gromov Wasserstein (original TorchGW framework)
 - Scetbon & Peyré (2022) — Linear-Time GW via Low-Rank Couplings
 - Fatras et al. (2021) — Minibatch OT Distances
 - Asi & Duchi (2019) — Variance Reduction for Stochastic Proximal Point

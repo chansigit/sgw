@@ -1,6 +1,6 @@
 """Integration test: spiral -> Swiss roll alignment.
 
-Validates that SGW produces a high-quality transport plan on the
+Validates that TorchGW produces a high-quality transport plan on the
 canonical spiral-to-Swiss-roll benchmark.
 """
 import time
@@ -10,7 +10,7 @@ import pytest
 import torch
 from scipy.stats import spearmanr
 
-from sgw import sampled_gw
+from torchgw import sampled_gw
 
 
 def _sample_spiral(n, seed=0):

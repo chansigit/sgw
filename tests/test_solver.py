@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import pytest
-from sgw._solver import sampled_gw
+from torchgw._solver import sampled_gw
 
 
 def test_sampled_gw_returns_tensor(two_datasets):
@@ -36,7 +36,7 @@ def test_distance_mode_dijkstra(two_datasets):
 
 
 def test_distance_mode_precomputed_with_matrices(two_datasets):
-    from sgw._graph import build_knn_graph
+    from torchgw._graph import build_knn_graph
     from scipy.sparse.csgraph import dijkstra as sp_dijkstra
 
     X_src, X_tgt = two_datasets
@@ -110,7 +110,7 @@ def test_sampled_gw_log_returns_tuple(two_datasets):
 
 
 def test_public_import():
-    from sgw import sampled_gw, build_knn_graph, joint_embedding
+    from torchgw import sampled_gw, build_knn_graph, joint_embedding
     assert callable(sampled_gw)
     assert callable(build_knn_graph)
     assert callable(joint_embedding)
@@ -184,7 +184,7 @@ def test_multiscale_custom_n_coarse(two_datasets):
 
 
 def test_lowrank_basic(two_datasets):
-    from sgw import sampled_lowrank_gw
+    from torchgw import sampled_lowrank_gw
     X_src, X_tgt = two_datasets
     T = sampled_lowrank_gw(X_src, X_tgt, rank=10, s_shared=50, M=30, max_iter=10)
     assert isinstance(T, torch.Tensor)
@@ -193,7 +193,7 @@ def test_lowrank_basic(two_datasets):
 
 
 def test_lowrank_with_precomputed(two_datasets):
-    from sgw import sampled_lowrank_gw
+    from torchgw import sampled_lowrank_gw
     X_src, X_tgt = two_datasets
     T = sampled_lowrank_gw(
         X_src, X_tgt,
@@ -206,7 +206,7 @@ def test_lowrank_with_precomputed(two_datasets):
 
 def test_lowrank_and_multiscale(two_datasets):
     """Both features combined."""
-    from sgw import sampled_lowrank_gw
+    from torchgw import sampled_lowrank_gw
     X_src, X_tgt = two_datasets
     T = sampled_lowrank_gw(
         X_src, X_tgt,
@@ -219,7 +219,7 @@ def test_lowrank_and_multiscale(two_datasets):
 
 
 def test_public_import_lowrank():
-    from sgw import sampled_lowrank_gw
+    from torchgw import sampled_lowrank_gw
     assert callable(sampled_lowrank_gw)
 
 

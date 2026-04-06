@@ -16,13 +16,13 @@
 
 | File | Role | Change |
 |------|------|--------|
-| `sgw/_distances.py` | Distance provider classes | **New** |
-| `sgw/_solver.py` | Main solver | **Modify** — new params, provider dispatch, FGW blending, tensor I/O |
-| `sgw/_graph.py` | kNN graph builder | No change |
-| `sgw/_sampling.py` | Anchor pair sampling | No change |
-| `sgw/_embedding.py` | Joint embedding | No change |
-| `sgw/_utils.py` | Device utils | No change |
-| `sgw/__init__.py` | Public API | No change |
+| `torchgw/_distances.py` | Distance provider classes | **New** |
+| `torchgw/_solver.py` | Main solver | **Modify** — new params, provider dispatch, FGW blending, tensor I/O |
+| `torchgw/_graph.py` | kNN graph builder | No change |
+| `torchgw/_sampling.py` | Anchor pair sampling | No change |
+| `torchgw/_embedding.py` | Joint embedding | No change |
+| `torchgw/_utils.py` | Device utils | No change |
+| `torchgw/__init__.py` | Public API | No change |
 | `tests/test_distances.py` | Unit tests for providers | **New** |
 | `tests/test_solver.py` | Solver tests | **Modify** — tensor output, new modes, FGW |
 | `tests/test_spiral_swissroll.py` | Integration test | **Modify** — tensor output, remove graph params |
@@ -36,7 +36,7 @@
 Extract the existing Dijkstra logic from `_solver.py` into a provider class. This is a pure refactor — no behavior change yet.
 
 **Files:**
-- Create: `sgw/_distances.py`
+- Create: `torchgw/_distances.py`
 - Create: `tests/test_distances.py`
 
 - [ ] **Step 1: Write failing test for DijkstraProvider**
@@ -46,8 +46,8 @@ Extract the existing Dijkstra logic from `_solver.py` into a provider class. Thi
 import numpy as np
 import torch
 import pytest
-from sgw._graph import build_knn_graph
-from sgw._distances import DijkstraProvider
+from torchgw._graph import build_knn_graph
+from torchgw._distances import DijkstraProvider
 
 
 def test_dijkstra_provider_shapes():
@@ -92,7 +92,7 @@ Expected: FAIL with "ModuleNotFoundError" or "ImportError"
 - [ ] **Step 3: Implement DijkstraProvider**
 
 ```python
-# sgw/_distances.py
+# torchgw/_distances.py
 import numpy as np
 import torch
 from joblib import Parallel, delayed
@@ -151,7 +151,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add sgw/_distances.py tests/test_distances.py
+git add torchgw/_distances.py tests/test_distances.py
 git commit -m "feat: add DijkstraProvider in _distances.py"
 ```
 
@@ -160,7 +160,7 @@ git commit -m "feat: add DijkstraProvider in _distances.py"
 ## Task 2: Add `PrecomputedProvider`
 
 **Files:**
-- Modify: `sgw/_distances.py`
+- Modify: `torchgw/_distances.py`
 - Modify: `tests/test_distances.py`
 
 - [ ] **Step 1: Write failing tests for PrecomputedProvider**
@@ -168,7 +168,7 @@ git commit -m "feat: add DijkstraProvider in _distances.py"
 Append to `tests/test_distances.py`:
 
 ```python
-from sgw._distances import PrecomputedProvider
+from torchgw._distances import PrecomputedProvider
 
 
 def test_precomputed_provider_from_matrices():
@@ -217,7 +217,7 @@ Expected: FAIL with "ImportError"
 
 - [ ] **Step 3: Implement PrecomputedProvider**
 
-Add to `sgw/_distances.py`:
+Add to `torchgw/_distances.py`:
 
 ```python
 class PrecomputedProvider:
@@ -263,7 +263,7 @@ Expected: all PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add sgw/_distances.py tests/test_distances.py
+git add torchgw/_distances.py tests/test_distances.py
 git commit -m "feat: add PrecomputedProvider in _distances.py"
 ```
 
@@ -272,7 +272,7 @@ git commit -m "feat: add PrecomputedProvider in _distances.py"
 ## Task 3: Add `SpectralProvider`
 
 **Files:**
-- Modify: `sgw/_distances.py`
+- Modify: `torchgw/_distances.py`
 - Modify: `tests/test_distances.py`
 
 - [ ] **Step 1: Write failing tests for SpectralProvider**
@@ -280,7 +280,7 @@ git commit -m "feat: add PrecomputedProvider in _distances.py"
 Append to `tests/test_distances.py`:
 
 ```python
-from sgw._distances import SpectralProvider
+from torchgw._distances import SpectralProvider
 
 
 def test_spectral_provider_shapes():
@@ -323,7 +323,7 @@ Expected: FAIL with "ImportError"
 
 - [ ] **Step 3: Implement SpectralProvider**
 
-Add to `sgw/_distances.py`:
+Add to `torchgw/_distances.py`:
 
 ```python
 from scipy.sparse import csr_matrix, diags
@@ -387,7 +387,7 @@ Expected: all PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add sgw/_distances.py tests/test_distances.py
+git add torchgw/_distances.py tests/test_distances.py
 git commit -m "feat: add SpectralProvider in _distances.py"
 ```
 
@@ -398,7 +398,7 @@ git commit -m "feat: add SpectralProvider in _distances.py"
 Replace the inline Dijkstra code with provider dispatch, change I/O to tensor, remove `graph_source`/`graph_target` params.
 
 **Files:**
-- Modify: `sgw/_solver.py`
+- Modify: `torchgw/_solver.py`
 - Modify: `tests/test_solver.py`
 
 - [ ] **Step 1: Write failing tests for new solver API**
@@ -409,7 +409,7 @@ Replace `tests/test_solver.py` with:
 import numpy as np
 import torch
 import pytest
-from sgw._solver import sampled_gw
+from torchgw._solver import sampled_gw
 
 
 def test_sampled_gw_returns_tensor(two_datasets):
@@ -446,7 +446,7 @@ def test_distance_mode_dijkstra(two_datasets):
 
 def test_distance_mode_precomputed_with_matrices(two_datasets):
     """Pass precomputed distance matrices, no X needed."""
-    from sgw._graph import build_knn_graph
+    from torchgw._graph import build_knn_graph
     from scipy.sparse.csgraph import dijkstra as sp_dijkstra
 
     X_src, X_tgt = two_datasets
@@ -523,7 +523,7 @@ def test_sampled_gw_log_returns_tuple(two_datasets):
 
 
 def test_public_import():
-    from sgw import sampled_gw, build_knn_graph, joint_embedding
+    from torchgw import sampled_gw, build_knn_graph, joint_embedding
     assert callable(sampled_gw)
     assert callable(build_knn_graph)
     assert callable(joint_embedding)
@@ -536,7 +536,7 @@ Expected: multiple FAILs (tensor output, new params not accepted)
 
 - [ ] **Step 3: Refactor `_solver.py`**
 
-Key changes to `sgw/_solver.py`:
+Key changes to `torchgw/_solver.py`:
 
 1. Remove `_batch_dijkstra` and `_DIJKSTRA_PARALLEL_THRESHOLD` (moved to `_distances.py`).
 2. Remove `graph_source` and `graph_target` parameters.
@@ -549,7 +549,7 @@ Key changes to `sgw/_solver.py`:
 The full updated `sampled_gw` function:
 
 ```python
-from sgw._distances import DijkstraProvider, PrecomputedProvider, SpectralProvider
+from torchgw._distances import DijkstraProvider, PrecomputedProvider, SpectralProvider
 
 def _to_tensor(x):
     """Convert numpy array or tensor to torch.Tensor. Pass through None."""
@@ -789,7 +789,7 @@ Expected: all PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add sgw/_solver.py tests/test_solver.py
+git add torchgw/_solver.py tests/test_solver.py
 git commit -m "refactor: provider dispatch, tensor I/O, remove graph params"
 ```
 
@@ -878,7 +878,7 @@ Replace `tests/test_spiral_swissroll.py` with:
 ```python
 """Integration test: spiral -> Swiss roll alignment.
 
-Validates that SGW produces a high-quality transport plan on the
+Validates that TorchGW produces a high-quality transport plan on the
 canonical spiral-to-Swiss-roll benchmark.
 """
 import numpy as np
@@ -886,7 +886,7 @@ import pytest
 import torch
 from scipy.stats import spearmanr
 
-from sgw import sampled_gw
+from torchgw import sampled_gw
 
 
 def _sample_spiral(n, seed=0):
@@ -966,9 +966,9 @@ Replace `tests/test_embedding.py` with:
 ```python
 import numpy as np
 import pytest
-from sgw._graph import build_knn_graph
-from sgw._solver import sampled_gw
-from sgw._embedding import joint_embedding
+from torchgw._graph import build_knn_graph
+from torchgw._solver import sampled_gw
+from torchgw._embedding import joint_embedding
 
 
 @pytest.fixture

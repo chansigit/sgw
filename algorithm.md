@@ -1,10 +1,10 @@
-# SGW v0.2.1 — Algorithm Description
+# TorchGW v0.2.1 — Algorithm Description
 
 ## Overview
 
-Sampled Gromov-Wasserstein (SGW) computes an optimal transport plan between two point clouds
+Sampled Gromov-Wasserstein (TorchGW) computes an optimal transport plan between two point clouds
 that may live in different dimensional spaces. Instead of computing the full N x K pairwise
-cost matrix each iteration, SGW **samples** M anchor pairs and approximates the GW cost
+cost matrix each iteration, TorchGW **samples** M anchor pairs and approximates the GW cost
 using only the distances from those anchors, reducing the per-iteration cost from
 O(NK(N+K)) to O(NKM).
 
@@ -50,7 +50,7 @@ or when `fgw_alpha=1.0` (pure Wasserstein).
 
 ## 3. Distance Computation Strategies
 
-SGW's main loop (Section 5) requires distance vectors D_X(:, m) and D_Y(:, m) for each
+TorchGW's main loop (Section 5) requires distance vectors D_X(:, m) and D_Y(:, m) for each
 sampled anchor. There are three strategies, suited to different problem scales.
 
 ### 3.1 Precomputed Full Pairwise Distances — small scale
@@ -394,7 +394,7 @@ Given an anchor dataset and one or more query datasets with their transport plan
 | Dijkstra | O(T * (NKM + MN log N)) | Dijkstra (CPU) |
 | Landmark | O(dN log N) + O(T * NKMd) | Precomputation |
 
-With M << min(N, K), all three SGW strategies are substantially faster than standard GW.
+With M << min(N, K), all three TorchGW strategies are substantially faster than standard GW.
 
 ---
 

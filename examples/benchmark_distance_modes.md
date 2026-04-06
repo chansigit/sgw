@@ -1,6 +1,6 @@
 # Distance Mode Benchmark: Spiral to Swiss Roll
 
-Comparison of the three distance computation strategies in SGW v0.2.0
+Comparison of the three distance computation strategies in TorchGW v0.2.0
 on the canonical spiral (400 pts, 2D) to Swiss roll (500 pts, 3D) alignment task.
 
 ## Setup

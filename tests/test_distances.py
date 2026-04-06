@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 import torch
-from sgw._graph import build_knn_graph
-from sgw._distances import DijkstraProvider, PrecomputedProvider, LandmarkProvider
+from torchgw._graph import build_knn_graph
+from torchgw._distances import DijkstraProvider, PrecomputedProvider, LandmarkProvider
 
 
 def test_dijkstra_provider_shapes():

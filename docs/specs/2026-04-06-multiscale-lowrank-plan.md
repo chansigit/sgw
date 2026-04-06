@@ -16,9 +16,9 @@
 
 | File | Role | Change |
 |------|------|--------|
-| `sgw/_multiscale.py` | FPS downsample + upsample plan | **New** |
-| `sgw/_lowrank.py` | Low-rank Sinkhorn via Dykstra projection | **New** |
-| `sgw/_solver.py` | Main solver | **Modify** — add params, dispatch logic |
+| `torchgw/_multiscale.py` | FPS downsample + upsample plan | **New** |
+| `torchgw/_lowrank.py` | Low-rank Sinkhorn via Dykstra projection | **New** |
+| `torchgw/_solver.py` | Main solver | **Modify** — add params, dispatch logic |
 | `tests/test_multiscale.py` | Multi-scale unit tests | **New** |
 | `tests/test_lowrank.py` | Low-rank Sinkhorn unit tests | **New** |
 | `tests/test_solver.py` | Solver integration tests | **Modify** — add combo tests |
@@ -28,7 +28,7 @@
 ## Task 1: Create `_multiscale.py` with `fps_downsample`
 
 **Files:**
-- Create: `sgw/_multiscale.py`
+- Create: `torchgw/_multiscale.py`
 - Create: `tests/test_multiscale.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -38,7 +38,7 @@
 import numpy as np
 import torch
 import pytest
-from sgw._multiscale import fps_downsample
+from torchgw._multiscale import fps_downsample
 
 
 def test_fps_downsample_shapes():
@@ -77,7 +77,7 @@ Expected: FAIL with ImportError
 - [ ] **Step 3: Implement `fps_downsample`**
 
 ```python
-# sgw/_multiscale.py
+# torchgw/_multiscale.py
 from __future__ import annotations
 
 import torch
@@ -132,7 +132,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add sgw/_multiscale.py tests/test_multiscale.py
+git add torchgw/_multiscale.py tests/test_multiscale.py
 git commit -m "feat: add fps_downsample in _multiscale.py"
 ```
 
@@ -141,7 +141,7 @@ git commit -m "feat: add fps_downsample in _multiscale.py"
 ## Task 2: Add `upsample_plan` to `_multiscale.py`
 
 **Files:**
-- Modify: `sgw/_multiscale.py`
+- Modify: `torchgw/_multiscale.py`
 - Modify: `tests/test_multiscale.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -149,7 +149,7 @@ git commit -m "feat: add fps_downsample in _multiscale.py"
 Append to `tests/test_multiscale.py`:
 
 ```python
-from sgw._multiscale import upsample_plan
+from torchgw._multiscale import upsample_plan
 
 
 def test_upsample_plan_shapes():
@@ -188,7 +188,7 @@ Expected: FAIL with ImportError
 
 - [ ] **Step 3: Implement `upsample_plan`**
 
-Add to `sgw/_multiscale.py`:
+Add to `torchgw/_multiscale.py`:
 
 ```python
 def upsample_plan(
@@ -236,7 +236,7 @@ Expected: all PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add sgw/_multiscale.py tests/test_multiscale.py
+git add torchgw/_multiscale.py tests/test_multiscale.py
 git commit -m "feat: add upsample_plan in _multiscale.py"
 ```
 
@@ -245,7 +245,7 @@ git commit -m "feat: add upsample_plan in _multiscale.py"
 ## Task 3: Create `_lowrank.py` with `sinkhorn_lowrank`
 
 **Files:**
-- Create: `sgw/_lowrank.py`
+- Create: `torchgw/_lowrank.py`
 - Create: `tests/test_lowrank.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -254,7 +254,7 @@ git commit -m "feat: add upsample_plan in _multiscale.py"
 # tests/test_lowrank.py
 import torch
 import pytest
-from sgw._lowrank import sinkhorn_lowrank
+from torchgw._lowrank import sinkhorn_lowrank
 
 
 def test_lowrank_returns_correct_shape():
@@ -294,7 +294,7 @@ def test_lowrank_marginals():
 
 def test_lowrank_vs_standard_close():
     """Low-rank with large rank should approximate standard Sinkhorn."""
-    from sgw._solver import _sinkhorn_torch
+    from torchgw._solver import _sinkhorn_torch
     N, K = 20, 25
     p = torch.ones(N, dtype=torch.float64) / N
     q = torch.ones(K, dtype=torch.float64) / K
@@ -317,7 +317,7 @@ Expected: FAIL with ImportError
 - [ ] **Step 3: Implement `sinkhorn_lowrank`**
 
 ```python
-# sgw/_lowrank.py
+# torchgw/_lowrank.py
 from __future__ import annotations
 
 import torch
@@ -439,7 +439,7 @@ Expected: all PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add sgw/_lowrank.py tests/test_lowrank.py
+git add torchgw/_lowrank.py tests/test_lowrank.py
 git commit -m "feat: add sinkhorn_lowrank in _lowrank.py"
 ```
 
@@ -448,7 +448,7 @@ git commit -m "feat: add sinkhorn_lowrank in _lowrank.py"
 ## Task 4: Wire multi-scale into `_solver.py`
 
 **Files:**
-- Modify: `sgw/_solver.py`
+- Modify: `torchgw/_solver.py`
 - Modify: `tests/test_solver.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -496,7 +496,7 @@ Add the following block **after input coercion and N/K inference, before provide
 ```python
     # ── Multi-scale warm start ──────────────────────────────────────
     if multiscale and X_source is not None and X_target is not None:
-        from sgw._multiscale import fps_downsample, upsample_plan
+        from torchgw._multiscale import fps_downsample, upsample_plan
 
         _n_coarse = n_coarse if n_coarse is not None else min(500, N // 4, K // 4)
         _n_coarse = max(_n_coarse, 10)  # floor
@@ -557,7 +557,7 @@ Expected: all PASS (including existing tests)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add sgw/_solver.py tests/test_solver.py
+git add torchgw/_solver.py tests/test_solver.py
 git commit -m "feat: wire multi-scale warm start into sampled_gw"
 ```
 
@@ -566,7 +566,7 @@ git commit -m "feat: wire multi-scale warm start into sampled_gw"
 ## Task 5: Wire low-rank into `_solver.py`
 
 **Files:**
-- Modify: `sgw/_solver.py`
+- Modify: `torchgw/_solver.py`
 - Modify: `tests/test_solver.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -620,7 +620,7 @@ Change the Sinkhorn function selection (around line 357):
 ```python
     # Select Sinkhorn implementation
     if rank is not None:
-        from sgw._lowrank import sinkhorn_lowrank
+        from torchgw._lowrank import sinkhorn_lowrank
         def _sinkhorn_fn(a, b, C, reg, **kw):
             kw.pop('check_every', None)
             return sinkhorn_lowrank(a, b, C, rank=rank, reg=reg, **kw)
@@ -654,7 +654,7 @@ Expected: all PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add sgw/_solver.py tests/test_solver.py
+git add torchgw/_solver.py tests/test_solver.py
 git commit -m "feat: wire low-rank Sinkhorn into sampled_gw"
 ```
 

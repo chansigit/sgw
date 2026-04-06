@@ -55,7 +55,7 @@ All combinations work with any distance_mode and fgw_alpha.
 1. Upsample: T_init[i, k] = T_coarse[assign_src[i], assign_tgt[k]].
 2. Normalize T_init so row sums match p and column sums match q (Sinkhorn-like scaling).
 3. Use T_init as the initial coupling (replacing the default p (x) q outer product).
-4. Run the full-scale SGW main loop.
+4. Run the full-scale TorchGW main loop.
 
 ### FPS Downsample
 
@@ -82,7 +82,7 @@ def upsample_plan(T_coarse, assign_src, assign_tgt, p, q):
     return T_init
 ```
 
-### File: `sgw/_multiscale.py`
+### File: `torchgw/_multiscale.py`
 
 Contains: `fps_downsample(X, n)`, `upsample_plan(T_coarse, assign_src, assign_tgt, p, q)`.
 
@@ -137,9 +137,9 @@ g2 = q / (R @ diag(g3) @ Q^T @ diag(g1) @ 1)
 
 All operations are O(Nr + Kr), never materializing the full (N, K) matrix.
 
-### Reconstructing T for the SGW main loop
+### Reconstructing T for the TorchGW main loop
 
-The SGW main loop needs T for:
+The TorchGW main loop needs T for:
 1. Sampling anchor pairs (needs T as dense matrix or row marginals)
 2. Computing GW cost: (Lambda * T).sum()
 3. Momentum update: T <- (1-alpha) * T_prev + alpha * T_new
@@ -167,7 +167,7 @@ Q <- (1 - alpha) * Q_prev + alpha * Q_new
 R <- (1 - alpha) * R_prev + alpha * R_new
 ```
 
-### File: `sgw/_lowrank.py`
+### File: `torchgw/_lowrank.py`
 
 Contains: `sinkhorn_lowrank(p, q, C, rank, reg, max_iter, tol, semi_relaxed, rho)`.
 
@@ -190,10 +190,10 @@ can be higher, e.g., 200 inner iterations vs 100 for standard).
 
 | File | Change |
 |------|--------|
-| `sgw/_multiscale.py` | **New**. `fps_downsample`, `upsample_plan` |
-| `sgw/_lowrank.py` | **New**. `sinkhorn_lowrank` with Dykstra projection |
-| `sgw/_solver.py` | Add `multiscale`, `n_coarse`, `rank` params; dispatch logic |
-| `sgw/__init__.py` | No change (internal modules) |
+| `torchgw/_multiscale.py` | **New**. `fps_downsample`, `upsample_plan` |
+| `torchgw/_lowrank.py` | **New**. `sinkhorn_lowrank` with Dykstra projection |
+| `torchgw/_solver.py` | Add `multiscale`, `n_coarse`, `rank` params; dispatch logic |
+| `torchgw/__init__.py` | No change (internal modules) |
 | `tests/test_multiscale.py` | **New**. FPS, upsample, end-to-end multiscale test |
 | `tests/test_lowrank.py` | **New**. Low-rank Sinkhorn correctness, rank parameter |
 | `tests/test_solver.py` | Add tests for multiscale + rank combinations |

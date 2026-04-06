@@ -4,17 +4,17 @@ API Reference
 Solver
 ------
 
-.. autofunction:: sgw.sampled_gw
+.. autofunction:: torchgw.sampled_gw
 
 Graph Construction
 ------------------
 
-.. autofunction:: sgw.build_knn_graph
+.. autofunction:: torchgw.build_knn_graph
 
 Joint Embedding
 ---------------
 
-.. autofunction:: sgw.joint_embedding
+.. autofunction:: torchgw.joint_embedding
 
 Internal Modules
 ----------------
@@ -22,18 +22,18 @@ Internal Modules
 Sinkhorn
 ^^^^^^^^
 
-.. autofunction:: sgw._solver._sinkhorn_torch
+.. autofunction:: torchgw._solver._sinkhorn_torch
 
-.. autofunction:: sgw._solver._sinkhorn_differentiable
+.. autofunction:: torchgw._solver._sinkhorn_differentiable
 
 Sampling
 ^^^^^^^^
 
-.. autofunction:: sgw._sampling.sample_pairs_from_plan
+.. autofunction:: torchgw._sampling.sample_pairs_from_plan
 
 Utilities
 ^^^^^^^^^
 
-.. autofunction:: sgw._utils.get_device
+.. autofunction:: torchgw._utils.get_device
 
-.. autofunction:: sgw._utils.maybe_gc
+.. autofunction:: torchgw._utils.maybe_gc
