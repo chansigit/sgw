@@ -51,10 +51,10 @@ dev = ["pytest>=7.0", "matplotlib>=3.6", "pot>=0.9"]
 docs = ["sphinx>=7.0", "sphinx-rtd-theme>=2.0"]
 
 [project.urls]
-Homepage = "https://github.com/chansigit/sgw"
-Documentation = "https://chansigit.github.io/sgw/"
-Repository = "https://github.com/chansigit/sgw"
-Issues = "https://github.com/chansigit/sgw/issues"
+Homepage = "https://github.com/chansigit/torchgw"
+Documentation = "https://chansigit.github.io/torchgw/"
+Repository = "https://github.com/chansigit/torchgw"
+Issues = "https://github.com/chansigit/torchgw/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

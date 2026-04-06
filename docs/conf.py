@@ -24,7 +24,7 @@ html_theme = "sphinx_rtd_theme"
 html_context = {
     "display_github": True,
     "github_user": "chansigit",
-    "github_repo": "sgw",
+    "github_repo": "torchgw",
     "github_version": "main",
     "conf_py_path": "/docs/",
 }

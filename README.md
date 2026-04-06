@@ -4,8 +4,8 @@
 
 # TorchGW — Sampled Gromov-Wasserstein
 
-[![Docs](https://img.shields.io/badge/docs-chansigit.github.io%2Fsgw-blue)](https://chansigit.github.io/sgw/)
-[![GitHub](https://img.shields.io/badge/github-chansigit%2Fsgw-black?logo=github)](https://github.com/chansigit/sgw)
+[![Docs](https://img.shields.io/badge/docs-chansigit.github.io%2Fsgw-blue)](https://chansigit.github.io/torchgw/)
+[![GitHub](https://img.shields.io/badge/github-chansigit%2Fsgw-black?logo=github)](https://github.com/chansigit/torchgw)
 
 A **pure PyTorch** solver for [Gromov-Wasserstein](https://arxiv.org/abs/1805.09114) optimal transport.
 Aligns two point clouds by matching their internal distance structures — even when the point clouds
