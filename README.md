@@ -4,8 +4,8 @@
 
 # TorchGW — Sampled Gromov-Wasserstein
 
-[![Docs](https://img.shields.io/badge/docs-chansigit.github.io%2Fsgw-blue)](https://chansigit.github.io/torchgw/)
-[![GitHub](https://img.shields.io/badge/github-chansigit%2Fsgw-black?logo=github)](https://github.com/chansigit/torchgw)
+[![Docs](https://img.shields.io/badge/docs-chansigit.github.io%2Ftorchgw-blue)](https://chansigit.github.io/torchgw/)
+[![GitHub](https://img.shields.io/badge/github-chansigit%2Ftorchgw-black?logo=github)](https://github.com/chansigit/torchgw)
 
 A **pure PyTorch** solver for [Gromov-Wasserstein](https://arxiv.org/abs/1805.09114) optimal transport.
 Aligns two point clouds by matching their internal distance structures — even when the point clouds
@@ -124,19 +124,6 @@ sampled_lowrank_gw(
 
 > **When to use:** only when N*K is too large for standard Sinkhorn memory (N, K > 50k).
 > At smaller scales, `sampled_gw` is significantly faster.
-
-### `build_knn_graph`
-
-```python
-build_knn_graph(X, k=30)  # returns csr_matrix, guaranteed connected
-```
-
-### `joint_embedding`
-
-```python
-joint_embedding(anchor_name, data_by_name, graphs_by_name, transport_plans, out_dim=30)
-# returns {name: (n, out_dim) array} — shared manifold embedding
-```
 
 ---
 
