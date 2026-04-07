@@ -58,11 +58,15 @@ class DijkstraProvider:
 
         if len(uncached) > 0:
             D_new = _batch_dijkstra(graph, uncached, self._parallel)
+            needed = set(int(s) for s in unique)
             for i, s in enumerate(uncached):
-                # Evict oldest entry if cache is full
+                # Evict oldest entry not needed this call
                 if len(cache) >= self._MAX_CACHE_ROWS:
-                    cache.pop(next(iter(cache)))
-                cache[s] = D_new[i].astype(np.float32)
+                    for key in list(cache):
+                        if key not in needed:
+                            cache.pop(key)
+                            break
+                cache[int(s)] = D_new[i].astype(np.float32)
 
         # Pre-allocate and fill (avoids list of arrays + vstack)
         N = graph.shape[0]
