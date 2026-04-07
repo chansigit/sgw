@@ -1,4 +1,4 @@
-TorchGW �� Fast Sampled Gromov-Wasserstein Optimal Transport
+TorchGW -- Fast Sampled Gromov-Wasserstein Optimal Transport
 ============================================================
 
 .. image:: logo.svg
