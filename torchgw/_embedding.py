@@ -106,9 +106,10 @@ def joint_embedding(
     H_op = LinearOperator((N_q, N_a), matvec=H_matvec, rmatvec=H_rmatvec)
 
     k_svds = min(out_dim + 2, N_q - 1, N_a - 1)
+    actual_dim = min(out_dim, k_svds)
     U, _, Vt = svds(H_op, k=k_svds, tol=1e-4)
-    U = U[:, ::-1][:, :out_dim]
-    V = Vt.T[:, ::-1][:, :out_dim]
+    U = U[:, ::-1][:, :actual_dim]
+    V = Vt.T[:, ::-1][:, :actual_dim]
 
     embeddings = {anchor_name: V.astype(np.float32)}
     pos = 0
