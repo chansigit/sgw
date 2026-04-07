@@ -57,8 +57,8 @@ def _sinkhorn_torch(
 ) -> torch.Tensor:
     """Log-domain Sinkhorn for numerical stability. Pure PyTorch."""
     log_K = -C / reg
-    log_a = torch.log(a + 1e-300)
-    log_b = torch.log(b + 1e-300)
+    log_a = torch.log(a.clamp(min=1e-30))
+    log_b = torch.log(b.clamp(min=1e-30))
     tau = rho / (rho + reg) if semi_relaxed else 1.0
 
     log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, tau, max_iter, tol, check_every, a, verbose=verbose)
@@ -74,8 +74,8 @@ class _SinkhornAutograd(torch.autograd.Function):
     @staticmethod
     def forward(ctx, C, a, b, reg, max_iter, tol, check_every, semi_relaxed, rho):
         log_K = -C / reg
-        log_a = torch.log(a + 1e-300)
-        log_b = torch.log(b + 1e-300)
+        log_a = torch.log(a.clamp(min=1e-30))
+        log_b = torch.log(b.clamp(min=1e-30))
         tau = rho / (rho + reg) if semi_relaxed else 1.0
 
         log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, tau, max_iter, tol, check_every, a)
