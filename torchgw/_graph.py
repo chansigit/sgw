@@ -19,6 +19,7 @@ def build_knn_graph(X: np.ndarray, k: int = 30) -> csr_matrix:
         Symmetric sparse distance graph, guaranteed connected.
     """
     graph = kneighbors_graph(X, k, mode="distance", n_jobs=-1)
+    graph = graph.maximum(graph.T)  # symmetrize: i->j implies j->i
     n_components, labels = connected_components(graph, directed=False)
     if n_components > 1:
         graph = _stitch_components(graph, X, labels, n_components)
