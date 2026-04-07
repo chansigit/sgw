@@ -109,8 +109,15 @@ class PrecomputedProvider:
             self.C_X = dist_source.float()
             self.C_Y = dist_target.float()
         elif graph_source is not None and graph_target is not None:
-            C_X_np = dijkstra(csgraph=graph_source, directed=False)
-            C_Y_np = dijkstra(csgraph=graph_target, directed=False)
+            N_total = graph_source.shape[0] + graph_target.shape[0]
+            if N_total >= 2000:
+                # Parallel all-pairs Dijkstra (scipy holds GIL → use processes)
+                C_X_np, C_Y_np = Parallel(n_jobs=2, prefer="processes")(
+                    delayed(dijkstra)(g, directed=False) for g in [graph_source, graph_target]
+                )
+            else:
+                C_X_np = dijkstra(csgraph=graph_source, directed=False)
+                C_Y_np = dijkstra(csgraph=graph_target, directed=False)
             self.C_X = torch.from_numpy(C_X_np).float()
             self.C_Y = torch.from_numpy(C_Y_np).float()
         else:
