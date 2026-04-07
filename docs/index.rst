@@ -1,5 +1,5 @@
-TorchGW — Sampled Gromov-Wasserstein
-================================
+TorchGW — Fast Sampled Gromov-Wasserstein
+=====================================
 
 .. image:: logo.svg
    :width: 480

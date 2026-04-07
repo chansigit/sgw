@@ -17,6 +17,7 @@ def _sinkhorn_loop(
     tol: float,
     check_every: int,
     a: torch.Tensor,
+    verbose: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Run log-domain Sinkhorn iterations. Returns (log_u, log_v)."""
     log_u = torch.zeros_like(log_a)
@@ -31,7 +32,12 @@ def _sinkhorn_loop(
             marginal = torch.exp(
                 log_u.unsqueeze(1) + log_K + log_v.unsqueeze(0)
             ).sum(dim=1)
-            if torch.abs(marginal - a).max().item() < tol:
+            marginal_err = torch.abs(marginal - a).max().item()
+            if verbose:
+                print(f"    sinkhorn {it+1:>4}/{max_iter} | marginal_err: {marginal_err:.4e}")
+            if marginal_err < tol:
+                if verbose:
+                    print(f"    sinkhorn converged at {it+1} (err={marginal_err:.4e})")
                 break
 
     return log_u, log_v
@@ -47,6 +53,7 @@ def _sinkhorn_torch(
     check_every: int = 10,
     semi_relaxed: bool = False,
     rho: float = 1.0,
+    verbose: bool = False,
 ) -> torch.Tensor:
     """Log-domain Sinkhorn for numerical stability. Pure PyTorch."""
     log_K = -C / reg
@@ -54,7 +61,7 @@ def _sinkhorn_torch(
     log_b = torch.log(b + 1e-300)
     tau = rho / (rho + reg) if semi_relaxed else 1.0
 
-    log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, tau, max_iter, tol, check_every, a)
+    log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, tau, max_iter, tol, check_every, a, verbose=verbose)
     return torch.exp(log_u.unsqueeze(1) + log_K + log_v.unsqueeze(0))
 
 
@@ -95,6 +102,7 @@ def _sinkhorn_differentiable(
     check_every: int = 10,
     semi_relaxed: bool = False,
     rho: float = 1.0,
+    verbose: bool = False,
 ) -> torch.Tensor:
     """Differentiable Sinkhorn using custom autograd (memory-efficient)."""
     return _SinkhornAutograd.apply(
@@ -110,7 +118,7 @@ def _to_tensor(x):
         return None
     if isinstance(x, torch.Tensor):
         return x
-    return torch.as_tensor(np.asarray(x))
+    return torch.as_tensor(x)
 
 
 # ── Shared preprocessing ────────────────────────────────────────────────
@@ -217,6 +225,7 @@ def _gw_loop(
     semi_relaxed: bool,
     rho: float,
     differentiable: bool = False,
+    lambda_ema_beta: float | None = None,
 ) -> tuple[torch.Tensor, list, int, float]:
     """Shared main loop for sampled_gw and sampled_lowrank_gw.
 
@@ -233,6 +242,9 @@ def _gw_loop(
     -------
     T_out, err_list, n_iter, gw_cost_val
     """
+    if lambda_ema_beta is not None and not (0.0 <= lambda_ema_beta <= 1.0):
+        raise ValueError(f"lambda_ema_beta must be in [0, 1], got {lambda_ema_beta}")
+
     T_real = T_init
 
     # Augmented marginals (only needed for standard Sinkhorn)
@@ -251,6 +263,7 @@ def _gw_loop(
     err_list = []
     gw_cost_val = 0.0
     n_iter = 0
+    Lambda_ema = None  # EMA state for cost matrix smoothing
 
     for i in range(max_iter):
         current_reg = initial_reg * (decay ** i)
@@ -279,6 +292,14 @@ def _gw_loop(
             term_C = torch.mean(D_tgt ** 2, dim=1, keepdim=True).T
             term_B = -2 * (D_left @ D_tgt.T) / M
             Lambda_gw = term_A + term_B + term_C
+
+            # Lambda EMA: smooth cost matrix across iterations
+            if lambda_ema_beta is not None:
+                if Lambda_ema is None:
+                    Lambda_ema = Lambda_gw
+                else:
+                    Lambda_ema = (1 - lambda_ema_beta) * Lambda_ema + lambda_ema_beta * Lambda_gw
+                Lambda_gw = Lambda_ema.clone()
         else:
             Lambda_gw = None
 
@@ -299,12 +320,16 @@ def _gw_loop(
             Lambda_aug[:-1, -1] = penalty
             Lambda_aug[-1, :-1] = penalty
 
+            verbose_sink = verbose and (n_iter + 1) % verbose_every == 0
             T_aug = sinkhorn_fn(p_aug, q_aug, Lambda_aug, current_reg,
-                                semi_relaxed=semi_relaxed, rho=rho)
+                                semi_relaxed=semi_relaxed, rho=rho,
+                                verbose=verbose_sink)
             T_new = T_aug[:-1, :-1]
         else:
+            verbose_sink = verbose and (n_iter + 1) % verbose_every == 0
             T_new = sinkhorn_fn(p_real, q_real, Lambda.to(torch.float64),
-                                current_reg, semi_relaxed=semi_relaxed, rho=rho)
+                                current_reg, semi_relaxed=semi_relaxed, rho=rho,
+                                verbose=verbose_sink)
 
         # Momentum update
         T_real = (1 - alpha) * T_prev + alpha * T_new
@@ -316,7 +341,8 @@ def _gw_loop(
         err_list.append(err)
         n_iter = i + 1
         if verbose and (n_iter % verbose_every == 0 or i == max_iter - 1):
-            print(f"  iter {n_iter:>4}/{max_iter} | err: {err:.4e}")
+            print(f"  iter {n_iter:>4}/{max_iter} | err: {err:.4e} | "
+                  f"gw_cost: {gw_cost_val:.4e} | reg: {current_reg:.4e}")
 
         if err < tol and i >= min_iter_before_converge:
             if verbose:
@@ -424,6 +450,7 @@ def sampled_gw(
     rho: float = 1.0,
     multiscale: bool = False,
     n_coarse: int | None = None,
+    lambda_ema_beta: float | None = None,
 ) -> torch.Tensor | tuple[torch.Tensor, dict]:
     """Sampled Gromov-Wasserstein alignment between two datasets.
 
@@ -462,6 +489,11 @@ def sampled_gw(
         Two-stage coarse-to-fine warm start.
     n_coarse : int, optional
         Coarse problem size (auto if None).
+    lambda_ema_beta : float, optional
+        EMA smoothing factor for the cost matrix. When set, maintains a
+        running average: Lambda_ema = (1-beta)*Lambda_ema + beta*Lambda_sample.
+        Reduces sampling variance at the cost of small bias that vanishes
+        at convergence. Typical values: 0.3–0.7. None disables (default).
 
     Returns
     -------
@@ -473,8 +505,6 @@ def sampled_gw(
         X_source, X_target, p, q, dist_source, dist_target, C_linear,
         distance_mode, fgw_alpha, k, n_landmarks, device,
     )
-
-    s_eff = s_shared if s_shared is not None and s_shared <= min(N, K) else min(N, K)
 
     # Marginals (float64)
     if p is not None:
@@ -521,6 +551,7 @@ def sampled_gw(
             device=device, verbose=verbose, verbose_every=verbose_every,
             semi_relaxed=semi_relaxed, rho=rho,
             differentiable=differentiable,
+            lambda_ema_beta=lambda_ema_beta,
         )
 
     if log:
@@ -561,6 +592,7 @@ def sampled_lowrank_gw(
     rho: float = 1.0,
     multiscale: bool = False,
     n_coarse: int | None = None,
+    lambda_ema_beta: float | None = None,
 ) -> torch.Tensor | tuple[torch.Tensor, dict]:
     """Sampled Gromov-Wasserstein with low-rank Sinkhorn.
 
@@ -591,6 +623,8 @@ def sampled_lowrank_gw(
     rho : float
     multiscale : bool
     n_coarse : int, optional
+    lambda_ema_beta : float, optional
+        EMA smoothing factor for the cost matrix (see ``sampled_gw``).
 
     Returns
     -------
@@ -637,7 +671,7 @@ def sampled_lowrank_gw(
     C_lin_device = C_linear_t.float().to(device) if C_linear_t is not None and fgw_alpha > 0 else None
 
     # Wrap sinkhorn_lowrank with fixed rank/iteration params
-    def _lr_sinkhorn(a, b, C, reg, semi_relaxed=False, rho=1.0):
+    def _lr_sinkhorn(a, b, C, reg, semi_relaxed=False, rho=1.0, verbose=False):
         return sinkhorn_lowrank(
             a, b, C, rank=rank, reg=reg,
             max_iter=lr_max_iter, dykstra_max_iter=lr_dykstra_max_iter,
@@ -659,6 +693,7 @@ def sampled_lowrank_gw(
             epsilon=epsilon, min_iter_before_converge=min_iter_before_converge,
             device=device, verbose=verbose, verbose_every=verbose_every,
             semi_relaxed=semi_relaxed, rho=rho,
+            lambda_ema_beta=lambda_ema_beta,
         )
 
     if log:

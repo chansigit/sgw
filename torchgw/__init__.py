@@ -1,4 +1,4 @@
-"""torchgw - Sampled Gromov-Wasserstein optimal transport solver."""
+"""torchgw - Fast Sampled Gromov-Wasserstein optimal transport solver."""
 
 from torchgw._solver import sampled_gw, sampled_lowrank_gw
 from torchgw._graph import build_knn_graph

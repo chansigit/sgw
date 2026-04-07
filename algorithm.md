@@ -1,4 +1,4 @@
-# TorchGW v0.2.1 — Algorithm Description
+# TorchGW v0.3.0 — Algorithm Description
 
 ## Overview
 
@@ -204,6 +204,26 @@ In matrix form:
 ```
 Lambda_gw = mean(D_X^2, axis=1) * 1^T  -  (2/M) * D_X @ D_Y^T  +  1 * mean(D_Y^2, axis=1)^T
 ```
+
+### 5.3.1 Lambda EMA (optional variance reduction)
+
+When `lambda_ema_beta` is set (a float in [0, 1]), maintain an exponential moving
+average of the cost matrix across iterations to reduce sampling variance:
+
+```
+Lambda_ema_0 = Lambda_gw_0                                          (first iteration)
+Lambda_ema_t = (1 - beta) * Lambda_ema_{t-1} + beta * Lambda_gw_t   (subsequent)
+```
+
+Use `Lambda_ema_t` in place of `Lambda_gw_t` for the remaining steps.
+
+**Trade-off**: Reduces variance from O(1/M) to O(beta/M), but introduces bias
+O(alpha^2 * err^2) that vanishes as T converges. Works well with the momentum
+update (Section 5.6) which already ensures slow T changes.
+
+Note: Each iteration normalizes distances independently (Section 5.3), so the
+EMA blends cost matrices computed at slightly different scales. In practice
+this is benign because normalization keeps values in a consistent range.
 
 ### 5.4 Fused GW Blending (optional)
 

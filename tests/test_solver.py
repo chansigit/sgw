@@ -243,6 +243,48 @@ def test_differentiable_gradient_flows():
     assert C_feat.grad.shape == C_feat.shape
 
 
+def test_lambda_ema_basic(two_datasets):
+    """lambda_ema_beta should produce a valid transport plan."""
+    X_src, X_tgt = two_datasets
+    T = sampled_gw(X_src, X_tgt, s_shared=50, M=30, max_iter=10,
+                   lambda_ema_beta=0.5)
+    assert isinstance(T, torch.Tensor)
+    assert T.shape == (150, 150)
+    assert torch.all(T >= 0)
+
+
+def test_lambda_ema_lowrank(two_datasets):
+    """lambda_ema_beta should work with the low-rank solver too."""
+    from torchgw import sampled_lowrank_gw
+    X_src, X_tgt = two_datasets
+    T = sampled_lowrank_gw(X_src, X_tgt, rank=10, s_shared=50, M=30,
+                           max_iter=10, lambda_ema_beta=0.5)
+    assert T.shape == (150, 150)
+    assert torch.all(T >= 0)
+
+
+def test_lambda_ema_boundary_values(two_datasets):
+    """beta=0.0 and beta=1.0 should be valid boundary cases."""
+    X_src, X_tgt = two_datasets
+    T0 = sampled_gw(X_src, X_tgt, s_shared=50, M=30, max_iter=5,
+                    lambda_ema_beta=0.0)
+    T1 = sampled_gw(X_src, X_tgt, s_shared=50, M=30, max_iter=5,
+                    lambda_ema_beta=1.0)
+    assert T0.shape == (150, 150)
+    assert T1.shape == (150, 150)
+
+
+def test_lambda_ema_invalid_values(two_datasets):
+    """Out-of-range beta values should raise ValueError."""
+    X_src, X_tgt = two_datasets
+    with pytest.raises(ValueError, match="lambda_ema_beta"):
+        sampled_gw(X_src, X_tgt, s_shared=50, M=30, max_iter=5,
+                   lambda_ema_beta=1.5)
+    with pytest.raises(ValueError, match="lambda_ema_beta"):
+        sampled_gw(X_src, X_tgt, s_shared=50, M=30, max_iter=5,
+                   lambda_ema_beta=-0.1)
+
+
 def test_semi_relaxed(two_datasets):
     """Semi-relaxed mode should produce a valid plan with relaxed target marginal."""
     X_src, X_tgt = two_datasets

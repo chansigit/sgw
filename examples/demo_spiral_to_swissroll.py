@@ -106,14 +106,16 @@ def run_experiment(n_src, n_tgt, k, run_pot=True):
     t0 = time.time()
     T_sgw = sampled_gw(
         spiral, swiss_roll,
-        graph_source=g_src, graph_target=g_tgt,
+        distance_mode="precomputed",
+        dist_source=C1, dist_target=C2,
         s_shared=min(n_src, n_tgt), M=80, alpha=0.8,
         max_iter=300, epsilon=0.005, k=k,
         verbose=True, verbose_every=100,
     )
     t_sgw = time.time() - t0
-    gw_sgw = gw_cost(C1, C2, T_sgw)
-    rho_sgw, _ = spearmanr(a_src, a_tgt[T_sgw.argmax(axis=1)])
+    T_sgw_np = T_sgw.cpu().numpy()
+    gw_sgw = gw_cost(C1, C2, T_sgw_np)
+    rho_sgw, _ = spearmanr(a_src, a_tgt[T_sgw_np.argmax(axis=1)])
     res.update(T_sgw=T_sgw, t_sgw=t_sgw, gw_sgw=gw_sgw, rho_sgw=rho_sgw,
                C1=C1, C2=C2)
     print(f"  TorchGW:  {t_sgw:>8.2f}s  |  GW={gw_sgw:.4e}  |  ρ={rho_sgw:.4f}")

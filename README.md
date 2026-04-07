@@ -2,7 +2,7 @@
   <img src="docs/logo.svg" alt="TorchGW logo" width="620">
 </p>
 
-# TorchGW — Sampled Gromov-Wasserstein
+# TorchGW — Fast Sampled Gromov-Wasserstein
 
 [![Docs](https://img.shields.io/badge/docs-chansigit.github.io%2Ftorchgw-blue)](https://chansigit.github.io/torchgw/)
 [![GitHub](https://img.shields.io/badge/github-chansigit%2Ftorchgw-black?logo=github)](https://github.com/chansigit/torchgw)
@@ -103,6 +103,7 @@ sampled_gw(
     differentiable=False,     # keep autograd graph
     multiscale=False,         # coarse-to-fine warm start
     n_coarse=None,            # coarse size (auto if None)
+    lambda_ema_beta=None,     # EMA smoothing for cost matrix (0–1)
     device=None, verbose=False, log=False,
 ) -> Tensor                   # (N, K) transport plan
 ```
