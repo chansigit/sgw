@@ -33,12 +33,35 @@ def _batch_dijkstra(graph: csr_matrix, sources: np.ndarray, parallel: bool) -> n
 
 
 class DijkstraProvider:
-    """Compute distances on-the-fly via Dijkstra on kNN graphs."""
+    """Compute distances on-the-fly via Dijkstra on kNN graphs.
+
+    Caches per-node Dijkstra rows across iterations to avoid redundant
+    shortest-path computations when the same anchor nodes are re-sampled.
+    """
 
     def __init__(self, graph_source: csr_matrix, graph_target: csr_matrix):
         self.graph_source = graph_source
         self.graph_target = graph_target
         self._parallel = max(graph_source.shape[0], graph_target.shape[0]) > 1000
+        # Cache: node_id -> full distance row (numpy float32)
+        self._cache_src: dict[int, np.ndarray] = {}
+        self._cache_tgt: dict[int, np.ndarray] = {}
+
+    def _get_rows(
+        self, graph: csr_matrix, indices: np.ndarray, cache: dict[int, np.ndarray],
+    ) -> np.ndarray:
+        """Get Dijkstra rows for indices, using cache for hits."""
+        unique = np.unique(indices)
+        # Split into cached vs uncached
+        uncached = np.array([s for s in unique if s not in cache], dtype=np.intp)
+
+        if len(uncached) > 0:
+            D_new = _batch_dijkstra(graph, uncached, self._parallel)
+            for i, s in enumerate(uncached):
+                cache[s] = D_new[i].astype(np.float32)
+
+        # Assemble result for all requested indices (with duplicates)
+        return np.vstack([cache[int(s)] for s in indices])
 
     def get_distances(
         self,
@@ -51,14 +74,11 @@ class DijkstraProvider:
         D_X : (N, len(src_indices))
         D_Y : (K, len(tgt_indices))
         """
-        unique_src, src_inv = np.unique(src_indices, return_inverse=True)
-        unique_tgt, tgt_inv = np.unique(tgt_indices, return_inverse=True)
+        D_src_all = self._get_rows(self.graph_source, src_indices, self._cache_src)
+        D_tgt_all = self._get_rows(self.graph_target, tgt_indices, self._cache_tgt)
 
-        D_src_all = _batch_dijkstra(self.graph_source, unique_src, self._parallel)
-        D_tgt_all = _batch_dijkstra(self.graph_target, unique_tgt, self._parallel)
-
-        D_X = torch.from_numpy(D_src_all).float().to(device).T[:, src_inv]
-        D_Y = torch.from_numpy(D_tgt_all).float().to(device).T[:, tgt_inv]
+        D_X = torch.from_numpy(D_src_all).to(device).T
+        D_Y = torch.from_numpy(D_tgt_all).to(device).T
 
         return D_X, D_Y
 
