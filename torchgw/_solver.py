@@ -52,6 +52,8 @@ def _sinkhorn_loop(
     check_every: int,
     a: torch.Tensor,
     verbose: bool = False,
+    log_u_init: torch.Tensor | None = None,
+    log_v_init: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Run log-domain Sinkhorn iterations. Returns (log_u, log_v).
 
@@ -64,7 +66,8 @@ def _sinkhorn_loop(
     if log_K.is_cuda:
         try:
             from torchgw._triton_sinkhorn import triton_sinkhorn_loop
-            return triton_sinkhorn_loop(log_K, log_a, log_b, tau, max_iter, tol, check_every, a, verbose)
+            return triton_sinkhorn_loop(log_K, log_a, log_b, tau, max_iter, tol, check_every, a,
+                                        verbose, log_u_init=log_u_init, log_v_init=log_v_init)
         except (ImportError, RuntimeError):
             pass
 
@@ -75,8 +78,8 @@ def _sinkhorn_loop(
             iter_fn = None
 
         if iter_fn is not None and not verbose and check_every > 1 and tol > 0:
-            log_u = torch.zeros_like(log_a)
-            log_v = torch.zeros_like(log_b)
+            log_u = log_u_init if log_u_init is not None else torch.zeros_like(log_a)
+            log_v = log_v_init if log_v_init is not None else torch.zeros_like(log_b)
             is_balanced = (tau == 1.0)
             done = 0
             while done < max_iter:
@@ -94,7 +97,8 @@ def _sinkhorn_loop(
             return log_u, log_v
 
     # Pure PyTorch fallback
-    return _sinkhorn_loop_pytorch(log_K, log_a, log_b, tau, max_iter, tol, check_every, a, verbose)
+    return _sinkhorn_loop_pytorch(log_K, log_a, log_b, tau, max_iter, tol, check_every, a,
+                                   verbose, log_u_init=log_u_init, log_v_init=log_v_init)
 
 
 def _sinkhorn_loop_pytorch(
@@ -107,10 +111,12 @@ def _sinkhorn_loop_pytorch(
     check_every: int,
     a: torch.Tensor,
     verbose: bool = False,
+    log_u_init: torch.Tensor | None = None,
+    log_v_init: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Pure PyTorch Sinkhorn fallback (CPU or when Triton/compile unavailable)."""
-    log_u = torch.zeros_like(log_a)
-    log_v = torch.zeros_like(log_b)
+    log_u = log_u_init if log_u_init is not None else torch.zeros_like(log_a)
+    log_v = log_v_init if log_v_init is not None else torch.zeros_like(log_b)
     is_balanced = (tau == 1.0)
 
     for it in range(max_iter):
@@ -145,19 +151,37 @@ def _sinkhorn_torch(
     semi_relaxed: bool = False,
     rho: float = 1.0,
     verbose: bool = False,
+    log_u_init: torch.Tensor | None = None,
+    log_v_init: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Log-domain Sinkhorn for numerical stability. Pure PyTorch.
 
     Operates in whatever dtype the inputs are given (float32 or float64).
     Dtype selection is handled by the caller (_gw_loop via sink_dtype).
+    Supports warm-starting via log_u_init/log_v_init from a previous solve.
     """
     log_K = -C / reg
     log_a = torch.log(a.clamp(min=1e-30))
     log_b = torch.log(b.clamp(min=1e-30))
     tau = rho / (rho + reg) if semi_relaxed else 1.0
 
-    log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, tau, max_iter, tol, check_every, a, verbose=verbose)
-    return torch.exp(log_u.unsqueeze(1) + log_K + log_v.unsqueeze(0))
+    log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, tau, max_iter, tol, check_every, a,
+                                   verbose=verbose, log_u_init=log_u_init, log_v_init=log_v_init)
+
+    # Fused T materialization (Triton on CUDA, PyTorch fallback)
+    if log_K.is_cuda:
+        try:
+            from torchgw._triton_sinkhorn import triton_materialize_T
+            T = triton_materialize_T(log_u, log_K, log_v)
+        except (ImportError, RuntimeError):
+            T = torch.exp(log_u.unsqueeze(1) + log_K + log_v.unsqueeze(0))
+    else:
+        T = torch.exp(log_u.unsqueeze(1) + log_K + log_v.unsqueeze(0))
+
+    # Stash potentials for warm-starting the next call
+    T._log_u = log_u.detach()  # type: ignore[attr-defined]
+    T._log_v = log_v.detach()  # type: ignore[attr-defined]
+    return T
 
 
 class _SinkhornAutograd(torch.autograd.Function):
@@ -198,6 +222,8 @@ def _sinkhorn_differentiable(
     semi_relaxed: bool = False,
     rho: float = 1.0,
     verbose: bool = False,
+    log_u_init: torch.Tensor | None = None,
+    log_v_init: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Differentiable Sinkhorn using custom autograd (memory-efficient)."""
     if semi_relaxed:
@@ -370,6 +396,8 @@ def _gw_loop(
     gw_cost_val = 0.0
     n_iter = 0
     Lambda_ema = None  # EMA state for cost matrix smoothing
+    _warm_log_u: torch.Tensor | None = None  # Sinkhorn warm-start potentials
+    _warm_log_v: torch.Tensor | None = None
 
     # Cost plateau detection via EMA + patience.
     # Critical because err = ||T - T_prev|| reflects sampling noise (not
@@ -447,15 +475,22 @@ def _gw_loop(
             T_aug = sinkhorn_fn(p_aug_sink, q_aug_sink,
                                 Lambda_aug, current_reg,
                                 semi_relaxed=semi_relaxed, rho=rho,
-                                verbose=verbose_sink)
+                                verbose=verbose_sink,
+                                log_u_init=_warm_log_u, log_v_init=_warm_log_v)
             T_new = T_aug[:-1, :-1]
+            # Retrieve potentials for warm-starting next iteration
+            _warm_log_u = getattr(T_aug, '_log_u', None)
+            _warm_log_v = getattr(T_aug, '_log_v', None)
         else:
             verbose_sink = verbose and (n_iter + 1) % verbose_every == 0
             Lambda_sink = Lambda if Lambda.dtype == sink_dtype else Lambda.to(sink_dtype)
             T_new = sinkhorn_fn(p_sink, q_sink,
                                 Lambda_sink,
                                 current_reg, semi_relaxed=semi_relaxed, rho=rho,
-                                verbose=verbose_sink)
+                                verbose=verbose_sink,
+                                log_u_init=_warm_log_u, log_v_init=_warm_log_v)
+            _warm_log_u = getattr(T_new, '_log_u', None)
+            _warm_log_v = getattr(T_new, '_log_v', None)
 
         # Momentum update
         T_real = (1 - alpha) * T_prev + alpha * T_new
@@ -829,7 +864,8 @@ def sampled_lowrank_gw(
     C_lin_device = C_linear_t.to(dtype=torch.float64, device=device) if C_linear_t is not None and fgw_alpha > 0 else None
 
     # Wrap sinkhorn_lowrank with fixed rank/iteration params
-    def _lr_sinkhorn(a, b, C, reg, semi_relaxed=False, rho=1.0, verbose=False):
+    def _lr_sinkhorn(a, b, C, reg, semi_relaxed=False, rho=1.0, verbose=False,
+                     log_u_init=None, log_v_init=None):
         return sinkhorn_lowrank(
             a, b, C, rank=rank, reg=reg,
             max_iter=lr_max_iter, dykstra_max_iter=lr_dykstra_max_iter,
