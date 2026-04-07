@@ -26,7 +26,7 @@ def _sinkhorn_loop(
     for it in range(max_iter):
         log_u = log_a - torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
         log_v_raw = log_b - torch.logsumexp(log_K + log_u.unsqueeze(1), dim=0)
-        log_v = tau * log_v_raw
+        log_v = tau * log_v_raw + (1 - tau) * log_v
 
         if tol > 0 and (it + 1) % check_every == 0:
             marginal = torch.exp(
