@@ -8,6 +8,32 @@ TorchGW -- Fast Sampled Gromov-Wasserstein Optimal Transport
 
 |
 
+.. image:: https://img.shields.io/badge/github-chansigit%2Ftorchgw-black?logo=github
+   :target: https://github.com/chansigit/torchgw
+   :alt: GitHub
+
+.. image:: https://img.shields.io/badge/version-0.4.0-green
+   :target: https://github.com/chansigit/torchgw/blob/main/CHANGELOG.md
+   :alt: Version
+
+.. image:: https://img.shields.io/badge/license-MIT-yellow
+   :target: https://opensource.org/licenses/MIT
+   :alt: License
+
+.. image:: https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white
+   :alt: Python
+
+.. image:: https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C?logo=pytorch&logoColor=white
+   :target: https://pytorch.org/
+   :alt: PyTorch
+
+|
+
+.. note::
+
+   **Source code:** `github.com/chansigit/torchgw <https://github.com/chansigit/torchgw>`_
+   — clone, star, or open issues on GitHub.
+
 TorchGW is a scalable solver for `Gromov-Wasserstein <https://arxiv.org/abs/1805.09114>`_
 optimal transport, implemented in **pure PyTorch** with GPU-accelerated
 `Triton <https://github.com/triton-lang/triton>`_ fused Sinkhorn kernels.
@@ -67,7 +93,37 @@ Quick Example
    T = sampled_gw(X_source, X_target, distance_mode="landmark", mixed_precision=True)
    # T[i,j] = optimal coupling weight between source point i and target point j
 
+Source Code & Links
+-------------------
+
+- **GitHub repository:** `chansigit/torchgw <https://github.com/chansigit/torchgw>`_
+- **Issue tracker:** `GitHub Issues <https://github.com/chansigit/torchgw/issues>`_
+- **Changelog:** `CHANGELOG.md <https://github.com/chansigit/torchgw/blob/main/CHANGELOG.md>`_
+- **PyPI:** *coming soon*
+
+.. code-block:: bash
+
+   # Clone and install from source
+   git clone https://github.com/chansigit/torchgw.git
+   cd torchgw
+   pip install -e .
+
+Citation
+--------
+
+If you use TorchGW in your research, please cite:
+
+.. code-block:: bibtex
+
+   @software{torchgw,
+     author = {Sijie Chen},
+     title = {TorchGW: Fast Sampled Gromov-Wasserstein Optimal Transport},
+     url = {https://github.com/chansigit/torchgw},
+     version = {0.4.0},
+     year = {2026},
+   }
+
 License
 -------
 
-MIT
+MIT — `LICENSE <https://github.com/chansigit/torchgw/blob/main/LICENSE>`_

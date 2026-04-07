@@ -35,6 +35,7 @@ html_context = {
 html_theme_options = {
     "logo_only": True,
     "navigation_depth": 3,
+    "prev_next_buttons_location": "both",
 }
 html_logo = "logo.svg"
 html_baseurl = "https://chansigit.github.io/torchgw/"

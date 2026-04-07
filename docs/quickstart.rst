@@ -1,6 +1,18 @@
 Quick Start
 ===========
 
+Installation
+------------
+
+.. code-block:: bash
+
+   git clone https://github.com/chansigit/torchgw.git
+   cd torchgw
+   pip install -e .
+
+Requirements: ``numpy``, ``scipy``, ``scikit-learn``, ``torch>=2.0``, ``joblib``.
+Source code: `github.com/chansigit/torchgw <https://github.com/chansigit/torchgw>`_.
+
 Basic Usage
 -----------
 
