@@ -249,6 +249,8 @@ def _gw_loop(
     """
     if lambda_ema_beta is not None and not (0.0 <= lambda_ema_beta <= 1.0):
         raise ValueError(f"lambda_ema_beta must be in [0, 1], got {lambda_ema_beta}")
+    if M < 1:
+        raise ValueError(f"M must be >= 1, got {M}")
 
     T_real = T_init
 
@@ -345,7 +347,7 @@ def _gw_loop(
         T_real = (1 - alpha) * T_prev + alpha * T_new
 
         # GW cost (unregularized)
-        gw_cost_val = (Lambda.to(torch.float64) * T_real[:N, :K]).sum().item()
+        gw_cost_val = (Lambda.to(torch.float64) * T_real).sum().item()
 
         err = torch.linalg.norm(T_real - T_prev).item()
         err_list.append(err)
@@ -362,7 +364,7 @@ def _gw_loop(
         del Lambda, T_new
         if use_augmented:
             del Lambda_aug, T_aug
-        if Lambda_gw is not None:
+        if provider is not None:
             del D_left, D_tgt, Lambda_gw
         if n_iter % 50 == 0:
             maybe_gc(do_cuda=True)
@@ -689,8 +691,7 @@ def sampled_lowrank_gw(
         )
 
     if semi_relaxed:
-        import warnings
-        warnings.warn("semi_relaxed is not yet supported for low-rank Sinkhorn and will be ignored")
+        raise ValueError("semi_relaxed is not supported for low-rank Sinkhorn")
 
     with torch.no_grad():
         T_out, err_list, n_iter, gw_cost_val = _gw_loop(
@@ -702,7 +703,7 @@ def sampled_lowrank_gw(
             M=M, alpha=alpha, max_iter=max_iter, tol=tol,
             epsilon=epsilon, min_iter_before_converge=min_iter_before_converge,
             device=device, verbose=verbose, verbose_every=verbose_every,
-            semi_relaxed=semi_relaxed, rho=rho,
+            semi_relaxed=False, rho=rho,
             lambda_ema_beta=lambda_ema_beta,
         )
 

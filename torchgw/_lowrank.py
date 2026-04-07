@@ -98,7 +98,6 @@ def sinkhorn_lowrank(
     dykstra_tol: float = 1e-7,
     semi_relaxed: bool = False,
     rho: float = 1.0,
-    **kwargs,
 ) -> torch.Tensor:
     """Low-rank Sinkhorn via mirror descent + Dykstra projection.
 
