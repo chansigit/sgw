@@ -345,9 +345,13 @@ def _gw_loop(
     n_iter = 0
     Lambda_ema = None  # EMA state for cost matrix smoothing
 
-    # Pre-allocate augmented cost matrix (reused every iteration)
+    # Pre-allocate augmented cost matrix and cast marginals (reused every iteration)
     if use_augmented:
         Lambda_aug = torch.zeros(N + 1, K + 1, device=device, dtype=sink_dtype)
+        p_aug_sink = p_aug.to(sink_dtype)
+        q_aug_sink = q_aug.to(sink_dtype)
+    p_sink = p_real.to(sink_dtype)
+    q_sink = q_real.to(sink_dtype)
 
     for i in range(max_iter):
         current_reg = initial_reg * (decay ** i)
@@ -398,7 +402,7 @@ def _gw_loop(
 
         # Sinkhorn step
         if use_augmented:
-            Lambda_aug[:N, :K] = Lambda.to(sink_dtype)
+            Lambda_aug[:N, :K] = Lambda if Lambda.dtype == sink_dtype else Lambda.to(sink_dtype)
             max_val = Lambda.max().item()
             penalty = 100.0 * max_val if max_val > 0 else 100.0
             Lambda_aug[:-1, -1] = penalty
@@ -406,15 +410,16 @@ def _gw_loop(
             Lambda_aug[-1, -1] = 0.0
 
             verbose_sink = verbose and (n_iter + 1) % verbose_every == 0
-            T_aug = sinkhorn_fn(p_aug.to(sink_dtype), q_aug.to(sink_dtype),
+            T_aug = sinkhorn_fn(p_aug_sink, q_aug_sink,
                                 Lambda_aug, current_reg,
                                 semi_relaxed=semi_relaxed, rho=rho,
                                 verbose=verbose_sink)
             T_new = T_aug[:-1, :-1]
         else:
             verbose_sink = verbose and (n_iter + 1) % verbose_every == 0
-            T_new = sinkhorn_fn(p_real.to(sink_dtype), q_real.to(sink_dtype),
-                                Lambda.to(sink_dtype),
+            Lambda_sink = Lambda if Lambda.dtype == sink_dtype else Lambda.to(sink_dtype)
+            T_new = sinkhorn_fn(p_sink, q_sink,
+                                Lambda_sink,
                                 current_reg, semi_relaxed=semi_relaxed, rho=rho,
                                 verbose=verbose_sink)
 
@@ -422,9 +427,8 @@ def _gw_loop(
         T_real = (1 - alpha) * T_prev + alpha * T_new
 
         # GW cost (unregularized) — dot product avoids N×K intermediate
-        gw_cost_val = torch.dot(
-            Lambda.to(sink_dtype).reshape(-1), T_real.reshape(-1)
-        ).item()
+        Lambda_flat = Lambda.reshape(-1) if Lambda.dtype == sink_dtype else Lambda.to(sink_dtype).reshape(-1)
+        gw_cost_val = torch.dot(Lambda_flat, T_real.reshape(-1)).item()
 
         err = torch.linalg.norm(T_real - T_prev).item()
         err_list.append(err)
@@ -438,13 +442,11 @@ def _gw_loop(
                 print(f"  converged at iteration {n_iter} (err={err:.4e})")
             break
 
-        del Lambda, T_new
+        del T_new
         if use_augmented:
             del T_aug
         if provider is not None:
             del D_left, D_tgt, Lambda_gw
-        if n_iter % 50 == 0:
-            maybe_gc(do_cuda=True)
 
     # Cast back to float64 for output precision
     T_out = T_real if T_real.dtype == torch.float64 else T_real.to(torch.float64)
