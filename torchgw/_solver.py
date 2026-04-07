@@ -288,7 +288,9 @@ def _gw_loop(
             for D in [D_left, D_tgt]:
                 inf_mask = torch.isinf(D)
                 if torch.any(inf_mask):
-                    D[inf_mask] = D[~inf_mask].max() * 1.5
+                    finite_vals = D[~inf_mask]
+                    fill = finite_vals.max() * 1.5 if finite_vals.numel() > 0 else 1.0
+                    D[inf_mask] = fill
                 mx = D.max()
                 if mx > 0:
                     D /= mx
