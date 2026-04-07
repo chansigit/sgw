@@ -55,54 +55,80 @@ def _sinkhorn_loop(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Run log-domain Sinkhorn iterations. Returns (log_u, log_v).
 
-    Uses torch.compile for kernel fusion when running on CUDA.
-    Runs check_every iterations as a compiled batch, then checks convergence.
+    Dispatch order:
+      1. Triton fused kernels (if available + CUDA) — fastest
+      2. torch.compile batched iterations (if available + CUDA) — fast
+      3. Pure PyTorch fallback — always works
     """
+    # Try Triton path first (single-pass fused logsumexp, no intermediate N×K)
+    if log_K.is_cuda:
+        try:
+            from torchgw._triton_sinkhorn import triton_sinkhorn_loop
+            return triton_sinkhorn_loop(log_K, log_a, log_b, tau, max_iter, tol, check_every, a, verbose)
+        except (ImportError, RuntimeError):
+            pass
+
+        # Try torch.compile path
+        try:
+            iter_fn = _get_compiled_sinkhorn()
+        except Exception:
+            iter_fn = None
+
+        if iter_fn is not None and not verbose and check_every > 1 and tol > 0:
+            log_u = torch.zeros_like(log_a)
+            log_v = torch.zeros_like(log_b)
+            is_balanced = (tau == 1.0)
+            done = 0
+            while done < max_iter:
+                batch = min(check_every, max_iter - done)
+                log_u, log_v = iter_fn(
+                    log_K, log_a, log_b, log_u, log_v,
+                    is_balanced, tau, batch,
+                )
+                done += batch
+                if tol > 0 and done % check_every == 0:
+                    log_marginal = log_u + torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
+                    marginal_err = torch.abs(torch.exp(log_marginal) - a).max().item()
+                    if marginal_err < tol:
+                        break
+            return log_u, log_v
+
+    # Pure PyTorch fallback
+    return _sinkhorn_loop_pytorch(log_K, log_a, log_b, tau, max_iter, tol, check_every, a, verbose)
+
+
+def _sinkhorn_loop_pytorch(
+    log_K: torch.Tensor,
+    log_a: torch.Tensor,
+    log_b: torch.Tensor,
+    tau: float,
+    max_iter: int,
+    tol: float,
+    check_every: int,
+    a: torch.Tensor,
+    verbose: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Pure PyTorch Sinkhorn fallback (CPU or when Triton/compile unavailable)."""
     log_u = torch.zeros_like(log_a)
     log_v = torch.zeros_like(log_b)
     is_balanced = (tau == 1.0)
 
-    # Use compiled kernel on CUDA when not verbose and convergence check is needed
-    use_compiled = (
-        log_K.is_cuda
-        and not verbose
-        and check_every > 1
-        and tol > 0
-    )
-    if use_compiled:
-        try:
-            iter_fn = _get_compiled_sinkhorn()
-        except Exception:
-            use_compiled = False
-
-    done = 0
-    while done < max_iter:
-        if use_compiled:
-            batch = min(check_every, max_iter - done)
-            log_u, log_v = iter_fn(
-                log_K, log_a, log_b, log_u, log_v,
-                is_balanced, tau, batch,
-            )
-            done += batch
+    for it in range(max_iter):
+        log_u = log_a - torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
+        log_v_raw = log_b - torch.logsumexp(log_K + log_u.unsqueeze(1), dim=0)
+        if is_balanced:
+            log_v = log_v_raw
         else:
-            # Fallback: single step
-            log_u = log_a - torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
-            log_v_raw = log_b - torch.logsumexp(log_K + log_u.unsqueeze(1), dim=0)
-            if is_balanced:
-                log_v = log_v_raw
-            else:
-                log_v = tau * log_v_raw + (1 - tau) * log_v
-            done += 1
+            log_v = tau * log_v_raw + (1 - tau) * log_v
 
-        # Convergence check
-        if tol > 0 and done % check_every == 0:
+        if tol > 0 and (it + 1) % check_every == 0:
             log_marginal = log_u + torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
             marginal_err = torch.abs(torch.exp(log_marginal) - a).max().item()
             if verbose:
-                print(f"    sinkhorn {done:>4}/{max_iter} | marginal_err: {marginal_err:.4e}")
+                print(f"    sinkhorn {it+1:>4}/{max_iter} | marginal_err: {marginal_err:.4e}")
             if marginal_err < tol:
                 if verbose:
-                    print(f"    sinkhorn converged at {done} (err={marginal_err:.4e})")
+                    print(f"    sinkhorn converged at {it+1} (err={marginal_err:.4e})")
                 break
 
     return log_u, log_v
