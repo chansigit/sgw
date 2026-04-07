@@ -23,6 +23,8 @@ reducing the per-iteration cost from :math:`O(NK(N+K))` to :math:`O(NKM)`.
    api
    algorithm
    benchmark
+   changelog
+   optimization-log
 
 
 Installation

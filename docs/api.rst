@@ -6,6 +6,8 @@ Solver
 
 .. autofunction:: torchgw.sampled_gw
 
+.. autofunction:: torchgw.sampled_lowrank_gw
+
 Graph Construction
 ------------------
 
@@ -31,9 +33,9 @@ Sampling
 
 .. autofunction:: torchgw._sampling.sample_pairs_from_plan
 
+.. autofunction:: torchgw._sampling.sample_pairs_gpu
+
 Utilities
 ^^^^^^^^^
 
 .. autofunction:: torchgw._utils.get_device
-
-.. autofunction:: torchgw._utils.maybe_gc

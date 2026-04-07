@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.abspath(".."))
 project = "TorchGW"
 copyright = "2026, Sijie Chen"
 author = "Sijie Chen"
-release = "0.3.0"
+release = "0.4.0"
 
 extensions = [
     "sphinx.ext.autodoc",
@@ -15,7 +15,9 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.mathjax",
     "sphinx.ext.intersphinx",
+    "myst_parser",
 ]
+myst_enable_extensions = ["colon_fence", "deflist"]
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build"]
