@@ -2,11 +2,45 @@ import numpy as np
 import torch
 
 from torchgw._graph import build_knn_graph
-from torchgw._sampling import sample_pairs_from_plan
+from torchgw._sampling import sample_pairs_gpu
 from torchgw._utils import get_device, maybe_gc
 
 
 # ── Sinkhorn core (shared by both no_grad and differentiable paths) ──────
+
+def _sinkhorn_iterations(
+    log_K: torch.Tensor,
+    log_a: torch.Tensor,
+    log_b: torch.Tensor,
+    log_u: torch.Tensor,
+    log_v: torch.Tensor,
+    is_balanced: bool,
+    tau: float,
+    n_iter: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Pure Sinkhorn iterations without convergence check (compilable)."""
+    for _ in range(n_iter):
+        log_u = log_a - torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
+        log_v_raw = log_b - torch.logsumexp(log_K + log_u.unsqueeze(1), dim=0)
+        if is_balanced:
+            log_v = log_v_raw
+        else:
+            log_v = tau * log_v_raw + (1 - tau) * log_v
+    return log_u, log_v
+
+
+# torch.compile for kernel fusion (lazy init to avoid import-time compilation)
+_sinkhorn_iterations_compiled = None
+
+
+def _get_compiled_sinkhorn():
+    global _sinkhorn_iterations_compiled
+    if _sinkhorn_iterations_compiled is None:
+        _sinkhorn_iterations_compiled = torch.compile(
+            _sinkhorn_iterations, mode="reduce-overhead", dynamic=False,
+        )
+    return _sinkhorn_iterations_compiled
+
 
 def _sinkhorn_loop(
     log_K: torch.Tensor,
@@ -19,25 +53,56 @@ def _sinkhorn_loop(
     a: torch.Tensor,
     verbose: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Run log-domain Sinkhorn iterations. Returns (log_u, log_v)."""
+    """Run log-domain Sinkhorn iterations. Returns (log_u, log_v).
+
+    Uses torch.compile for kernel fusion when running on CUDA.
+    Runs check_every iterations as a compiled batch, then checks convergence.
+    """
     log_u = torch.zeros_like(log_a)
     log_v = torch.zeros_like(log_b)
+    is_balanced = (tau == 1.0)
 
-    for it in range(max_iter):
-        log_u = log_a - torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
-        log_v_raw = log_b - torch.logsumexp(log_K + log_u.unsqueeze(1), dim=0)
-        log_v = tau * log_v_raw + (1 - tau) * log_v
+    # Use compiled kernel on CUDA when not verbose and convergence check is needed
+    use_compiled = (
+        log_K.is_cuda
+        and not verbose
+        and check_every > 1
+        and tol > 0
+    )
+    if use_compiled:
+        try:
+            iter_fn = _get_compiled_sinkhorn()
+        except Exception:
+            use_compiled = False
 
-        if tol > 0 and (it + 1) % check_every == 0:
-            marginal = torch.exp(
-                log_u.unsqueeze(1) + log_K + log_v.unsqueeze(0)
-            ).sum(dim=1)
-            marginal_err = torch.abs(marginal - a).max().item()
+    done = 0
+    while done < max_iter:
+        if use_compiled and not verbose:
+            batch = min(check_every, max_iter - done)
+            log_u, log_v = iter_fn(
+                log_K, log_a, log_b, log_u, log_v,
+                is_balanced, tau, batch,
+            )
+            done += batch
+        else:
+            # Fallback: single step
+            log_u = log_a - torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
+            log_v_raw = log_b - torch.logsumexp(log_K + log_u.unsqueeze(1), dim=0)
+            if is_balanced:
+                log_v = log_v_raw
+            else:
+                log_v = tau * log_v_raw + (1 - tau) * log_v
+            done += 1
+
+        # Convergence check
+        if tol > 0 and done % check_every == 0:
+            log_marginal = log_u + torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
+            marginal_err = torch.abs(torch.exp(log_marginal) - a).max().item()
             if verbose:
-                print(f"    sinkhorn {it+1:>4}/{max_iter} | marginal_err: {marginal_err:.4e}")
+                print(f"    sinkhorn {done:>4}/{max_iter} | marginal_err: {marginal_err:.4e}")
             if marginal_err < tol:
                 if verbose:
-                    print(f"    sinkhorn converged at {it+1} (err={marginal_err:.4e})")
+                    print(f"    sinkhorn converged at {done} (err={marginal_err:.4e})")
                 break
 
     return log_u, log_v
@@ -272,6 +337,10 @@ def _gw_loop(
     n_iter = 0
     Lambda_ema = None  # EMA state for cost matrix smoothing
 
+    # Pre-allocate augmented cost matrix (reused every iteration)
+    if use_augmented:
+        Lambda_aug = torch.zeros(N + 1, K + 1, device=device, dtype=torch.float64)
+
     for i in range(max_iter):
         current_reg = initial_reg * (decay ** i)
         # In differentiable mode, detach T_prev to prevent computation graph
@@ -279,12 +348,8 @@ def _gw_loop(
         # step will carry gradients through the momentum blend.
         T_prev = T_real.detach().clone() if differentiable else T_real.clone()
 
-        # Sample anchor pairs
-        T_cpu = T_real.detach().cpu().numpy()
-        pairs = sample_pairs_from_plan(T_cpu, M)
-        j_left, l_target = zip(*pairs)
-        j_left = np.asarray(j_left)
-        l_target = np.asarray(l_target)
+        # Sample anchor pairs (on GPU, only transfers 2*M ints back)
+        j_left, l_target = sample_pairs_gpu(T_real.detach(), M)
 
         # Compute distances via provider
         if provider is not None:
@@ -325,12 +390,12 @@ def _gw_loop(
 
         # Sinkhorn step
         if use_augmented:
-            Lambda_aug = torch.zeros(N + 1, K + 1, device=device, dtype=torch.float64)
             Lambda_aug[:N, :K] = Lambda.to(torch.float64)
             max_val = Lambda.max().item()
             penalty = 100.0 * max_val if max_val > 0 else 100.0
             Lambda_aug[:-1, -1] = penalty
             Lambda_aug[-1, :-1] = penalty
+            Lambda_aug[-1, -1] = 0.0
 
             verbose_sink = verbose and (n_iter + 1) % verbose_every == 0
             T_aug = sinkhorn_fn(p_aug, q_aug, Lambda_aug, current_reg,
@@ -363,7 +428,7 @@ def _gw_loop(
 
         del Lambda, T_new
         if use_augmented:
-            del Lambda_aug, T_aug
+            del T_aug
         if provider is not None:
             del D_left, D_tgt, Lambda_gw
         if n_iter % 50 == 0:

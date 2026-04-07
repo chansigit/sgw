@@ -1,9 +1,10 @@
 import numpy as np
+import torch
 
 
 def sample_pairs_from_plan(
     T: np.ndarray, M: int, rng: np.random.Generator | None = None,
-) -> list[tuple[int, int]]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Sample M (row, col) pairs from transport plan T, weighted by mass.
 
     Uses the Gumbel-max trick for vectorized categorical sampling,
@@ -19,7 +20,8 @@ def sample_pairs_from_plan(
 
     Returns
     -------
-    pairs : list of (row_index, col_index) tuples
+    rows : ndarray of shape (M,)
+    cols : ndarray of shape (M,)
     """
     if rng is None:
         rng = np.random.default_rng()
@@ -30,7 +32,7 @@ def sample_pairs_from_plan(
     if total < 1e-9:
         rows = rng.integers(0, N, size=M)
         cols = rng.integers(0, K, size=M)
-        return list(zip(rows, cols))
+        return rows, cols
 
     p_rows = p_rows / total
     sampled_rows = rng.choice(N, size=M, p=p_rows)
@@ -43,4 +45,44 @@ def sample_pairs_from_plan(
     gumbel_noise = -np.log(-np.log(rng.uniform(size=(M, K)) + 1e-30) + 1e-30)
     sampled_cols = np.argmax(log_probs + gumbel_noise, axis=1)
 
-    return list(zip(sampled_rows, sampled_cols))
+    return sampled_rows, sampled_cols
+
+
+def sample_pairs_gpu(
+    T: torch.Tensor, M: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Sample M (row, col) pairs on GPU using torch.multinomial.
+
+    Avoids transferring the full (N, K) transport plan to CPU.
+    Only transfers 2*M integers back.
+
+    Parameters
+    ----------
+    T : Tensor of shape (N, K), non-negative, on any device
+    M : number of pairs to sample
+
+    Returns
+    -------
+    rows : ndarray of shape (M,)
+    cols : ndarray of shape (M,)
+    """
+    N, K = T.shape
+
+    # Row sampling
+    p_rows = T.sum(dim=1)
+    total = p_rows.sum()
+    if total < 1e-9:
+        rows = torch.randint(0, N, (M,), device=T.device)
+        cols = torch.randint(0, K, (M,), device=T.device)
+        return rows.cpu().numpy(), cols.cpu().numpy()
+
+    p_rows = p_rows / total
+    rows = torch.multinomial(p_rows, M, replacement=True)
+
+    # Column sampling per selected row
+    row_probs = T[rows]  # (M, K)
+    row_sums = row_probs.sum(dim=1, keepdim=True).clamp(min=1e-30)
+    row_probs = row_probs / row_sums
+    cols = torch.multinomial(row_probs, 1).squeeze(1)
+
+    return rows.cpu().numpy(), cols.cpu().numpy()

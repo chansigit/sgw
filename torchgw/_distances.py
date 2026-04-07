@@ -152,6 +152,7 @@ class LandmarkProvider:
     def __init__(self, graph_source: csr_matrix, graph_target: csr_matrix, n_landmarks: int = 50):
         self.Z_X = torch.from_numpy(_landmark_embed(graph_source, n_landmarks))
         self.Z_Y = torch.from_numpy(_landmark_embed(graph_target, n_landmarks))
+        self._cached_device: torch.device | None = None
 
     def get_distances(
         self,
@@ -159,10 +160,12 @@ class LandmarkProvider:
         tgt_indices: np.ndarray,
         device: torch.device,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        Z_X = self.Z_X.to(device)
-        Z_Y = self.Z_Y.to(device)
+        if self._cached_device != device:
+            self.Z_X = self.Z_X.to(device)
+            self.Z_Y = self.Z_Y.to(device)
+            self._cached_device = device
 
-        D_X = torch.cdist(Z_X, Z_X[src_indices])
-        D_Y = torch.cdist(Z_Y, Z_Y[tgt_indices])
+        D_X = torch.cdist(self.Z_X, self.Z_X[src_indices])
+        D_Y = torch.cdist(self.Z_Y, self.Z_Y[tgt_indices])
 
         return D_X, D_Y
