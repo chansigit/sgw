@@ -168,6 +168,8 @@ def sinkhorn_lowrank(
         norm_2 = torch.max(torch.abs(CQ_g + reg * log_R)).item() ** 2
         norm_3 = torch.max(torch.abs(-omega * diag_1g.squeeze(0))).item() ** 2
         gamma = 10.0 / max(norm_1, norm_2, norm_3, 1e-30)
+        # Ensure gamma*reg >= 1 to prevent exponential blowup in mirror maps
+        gamma = max(gamma, 1.0 / max(reg, 1e-30))
 
         # Mirror descent exponential maps
         eps1 = torch.exp(-gamma * CR_g - (gamma * reg - 1) * log_Q)
