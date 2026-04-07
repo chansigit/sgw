@@ -7,7 +7,7 @@ name = "torchgw"
 version = "0.4.0"
 description = "Fast Sampled Gromov-Wasserstein optimal transport solver — pure PyTorch, scalable, differentiable"
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "Academic and Non-Commercial Use License" }
 requires-python = ">=3.10"
 authors = [
     { name = "Sijie Chen", email = "chensj16@stanford.edu" },
@@ -27,7 +27,7 @@ keywords = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",

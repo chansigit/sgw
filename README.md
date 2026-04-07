@@ -8,7 +8,7 @@
   <a href="https://chansigit.github.io/torchgw/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-blue?logo=readthedocs&logoColor=white" alt="Documentation"></a>
   <a href="https://github.com/chansigit/torchgw"><img src="https://img.shields.io/badge/github-chansigit%2Ftorchgw-black?logo=github" alt="GitHub"></a>
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.4.0-green" alt="Version"></a>
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Non--Commercial-orange" alt="License"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white" alt="Python"></a>
   <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C?logo=pytorch&logoColor=white" alt="PyTorch"></a>
 </p>
@@ -322,4 +322,12 @@ If you use TorchGW in your research, please cite:
 
 ## License
 
-[MIT](LICENSE)
+This project is source-available.
+
+It is free for academic and other non-commercial research and educational use under the terms of the included [`LICENSE`](LICENSE).
+
+Any commercial use — including any use by or on behalf of a for-profit entity, internal commercial research, product development, consulting, paid services, or deployment in commercial settings — requires a separate paid commercial license.
+
+For commercial licensing inquiries, please contact: chansigit@gmail.com
+
+See [`COMMERCIAL_LICENSE.md`](COMMERCIAL_LICENSE.md) for details.

@@ -16,8 +16,8 @@ TorchGW -- Fast Sampled Gromov-Wasserstein Optimal Transport
    :target: https://github.com/chansigit/torchgw/blob/main/CHANGELOG.md
    :alt: Version
 
-.. image:: https://img.shields.io/badge/license-MIT-yellow
-   :target: https://opensource.org/licenses/MIT
+.. image:: https://img.shields.io/badge/license-Non--Commercial-orange
+   :target: https://github.com/chansigit/torchgw/blob/main/LICENSE
    :alt: License
 
 .. image:: https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white
@@ -126,4 +126,7 @@ If you use TorchGW in your research, please cite:
 License
 -------
 
-MIT — `LICENSE <https://github.com/chansigit/torchgw/blob/main/LICENSE>`_
+Free for academic and non-commercial use. Commercial use requires a separate license.
+See `LICENSE <https://github.com/chansigit/torchgw/blob/main/LICENSE>`_ and
+`COMMERCIAL_LICENSE.md <https://github.com/chansigit/torchgw/blob/main/COMMERCIAL_LICENSE.md>`_
+for details. Contact: chansigit@gmail.com
