@@ -105,6 +105,11 @@ def _sinkhorn_differentiable(
     verbose: bool = False,
 ) -> torch.Tensor:
     """Differentiable Sinkhorn using custom autograd (memory-efficient)."""
+    if semi_relaxed:
+        raise NotImplementedError(
+            "differentiable=True is not supported with semi_relaxed=True: "
+            "the envelope theorem gradient is only valid for balanced Sinkhorn"
+        )
     return _SinkhornAutograd.apply(
         C, a, b, reg, max_iter, tol, check_every, semi_relaxed, rho,
     )
