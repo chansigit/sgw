@@ -345,6 +345,14 @@ def _gw_loop(
     n_iter = 0
     Lambda_ema = None  # EMA state for cost matrix smoothing
 
+    # Cost plateau detection via EMA + patience.
+    # Critical because err = ||T - T_prev|| reflects sampling noise (not
+    # optimization progress) and may never converge to tol.
+    _cost_ema: float | None = None
+    _best_cost_ema = float('inf')
+    _no_improve = 0
+    _patience = max(min_iter_before_converge // 2, 20)
+
     # Pre-allocate augmented cost matrix and cast marginals (reused every iteration)
     if use_augmented:
         Lambda_aug = torch.zeros(N + 1, K + 1, device=device, dtype=sink_dtype)
@@ -437,10 +445,24 @@ def _gw_loop(
             print(f"  iter {n_iter:>4}/{max_iter} | err: {err:.4e} | "
                   f"gw_cost: {gw_cost_val:.4e} | reg: {current_reg:.4e}")
 
-        if err < tol and i >= min_iter_before_converge:
-            if verbose:
-                print(f"  converged at iteration {n_iter} (err={err:.4e})")
-            break
+        # Convergence: plan change OR cost EMA plateau
+        _cost_ema = gw_cost_val if _cost_ema is None else 0.8 * _cost_ema + 0.2 * gw_cost_val
+        if i >= min_iter_before_converge:
+            if err < tol:
+                if verbose:
+                    print(f"  converged at iteration {n_iter} (err={err:.4e})")
+                break
+            # Cost plateau: EMA stopped improving by >0.5% for _patience iters
+            if _cost_ema < _best_cost_ema * 0.995:
+                _best_cost_ema = _cost_ema
+                _no_improve = 0
+            else:
+                _no_improve += 1
+            if _no_improve >= _patience:
+                if verbose:
+                    print(f"  cost plateau at iteration {n_iter} "
+                          f"(no improve for {_patience} iters, gw_cost={gw_cost_val:.4e})")
+                break
 
         del T_new
         if use_augmented:
