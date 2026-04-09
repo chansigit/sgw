@@ -113,9 +113,10 @@ Spiral (2D) to Swiss roll (3D) alignment on NVIDIA L40S, `mixed_precision=True`,
 |:------|-----:|:------------:|-----------:|
 | 4,000 x 5,000 | **2.4 s** | 0.999 | 1.1 GB |
 | 10,000 x 12,000 | **3.0 s** | 0.999 | 6.7 GB |
-| 15,000 x 18,000 | **6.6 s** | 0.999 | 15 GB |
-| 20,000 x 25,000 | **12.7 s** | 0.999 | 28 GB |
-| 25,000 x 30,000 | **18.0 s** | 0.999 | 42 GB |
+| 20,000 x 25,000 | **12 s** | 0.999 | 18 GB |
+| 25,000 x 30,000 | **17 s** | 0.999 | 24 GB |
+| 30,000 x 35,000 | **25 s** | 0.999 | 34 GB |
+| 35,000 x 40,000 | **34 s** | 0.999 | 45 GB |
 
 > Alignment quality (Spearman >= 0.999) is maintained across all scales.
 > At 4000x5000, TorchGW is **~175x faster** than POT (1.0s vs 183s).

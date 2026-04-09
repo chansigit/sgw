@@ -152,6 +152,7 @@ def _sinkhorn_torch(
     check_every: int = 10,
     semi_relaxed: bool = False,
     rho: float = 1.0,
+    _inplace_C: bool = False,
     verbose: bool = False,
     log_u_init: torch.Tensor | None = None,
     log_v_init: torch.Tensor | None = None,
@@ -162,7 +163,7 @@ def _sinkhorn_torch(
     Dtype selection is handled by the caller (_gw_loop via sink_dtype).
     Supports warm-starting via log_u_init/log_v_init from a previous solve.
     """
-    log_K = -C / reg
+    log_K = C.neg_().div_(reg) if _inplace_C else -C / reg
     log_a = torch.log(a.clamp(min=1e-30))
     log_b = torch.log(b.clamp(min=1e-30))
     tau = rho / (rho + reg) if semi_relaxed else 1.0
@@ -558,10 +559,6 @@ def _gw_loop(
 
     for i in range(max_iter):
         current_reg = initial_reg * (decay ** i)
-        # In differentiable mode, detach T_prev to prevent computation graph
-        # accumulation across iterations; only the final iteration's Sinkhorn
-        # step will carry gradients through the momentum blend.
-        T_prev = T_real.detach().clone() if differentiable else T_real.clone()
 
         # Sample anchor pairs (on GPU, only transfers 2*M ints back)
         j_left, l_target = sample_pairs_gpu(T_real.detach(), M)
@@ -580,10 +577,15 @@ def _gw_loop(
                 if mx > 0:
                     D /= mx
 
-            term_A = torch.mean(D_left ** 2, dim=1, keepdim=True)
-            term_C = torch.mean(D_tgt ** 2, dim=1, keepdim=True).T
-            term_B = -2 * (D_left @ D_tgt.T) / M
-            Lambda_gw = term_A + term_B + term_C
+            # Build Lambda_gw in sink_dtype (float32 when mixed_precision)
+            # to avoid a full N*K float64 allocation.
+            D_left_s = D_left if D_left.dtype == sink_dtype else D_left.to(sink_dtype)
+            D_tgt_s = D_tgt if D_tgt.dtype == sink_dtype else D_tgt.to(sink_dtype)
+            term_A = torch.mean(D_left_s ** 2, dim=1, keepdim=True)
+            term_C = torch.mean(D_tgt_s ** 2, dim=1, keepdim=True).T
+            Lambda_gw = torch.mm(D_left_s, D_tgt_s.T)
+            Lambda_gw.mul_(-2.0 / M).add_(term_A).add_(term_C)
+            del D_left_s, D_tgt_s
 
             # Lambda EMA: smooth cost matrix across iterations
             # beta=0.0 is treated as disabled (same as None)
@@ -617,7 +619,8 @@ def _gw_loop(
                                 Lambda_aug, current_reg,
                                 semi_relaxed=semi_relaxed, rho=rho,
                                 verbose=verbose_sink,
-                                log_u_init=_warm_log_u, log_v_init=_warm_log_v)
+                                log_u_init=_warm_log_u, log_v_init=_warm_log_v,
+                                _inplace_C=True)
             T_new = T_aug[:-1, :-1]
             # Retrieve potentials for warm-starting next iteration
             _warm_log_u = getattr(T_aug, '_log_u', None)
@@ -633,14 +636,27 @@ def _gw_loop(
             _warm_log_u = getattr(T_new, '_log_u', None)
             _warm_log_v = getattr(T_new, '_log_v', None)
 
-        # Momentum update
-        T_real = (1 - alpha) * T_prev + alpha * T_new
+        # In-place momentum update: T_real = (1-alpha)*T_real + alpha*T_new
+        # Avoids allocating a separate T_prev copy (saves one N*K buffer).
+        # Compute convergence metric BEFORE the in-place update.
+        if differentiable:
+            # Differentiable mode: keep T_new in graph, no in-place
+            T_prev = T_real.detach().clone()
+            T_real = (1 - alpha) * T_prev + alpha * T_new
+            err_tensor = torch.linalg.norm(T_real - T_prev)
+            del T_prev
+        else:
+            # In-place momentum: T_real ← (1-α)T_real + αT_new
+            # After update: T_real_new - T_real_old = α(T_new - T_real_old)
+            #   = α/(1-α) * (T_real_new - T_new)   [since T_real_new - T_new = (1-α)(T_real_old - T_new)]
+            # Compute in-place to avoid N*K temporaries:
+            T_real.mul_(1 - alpha).add_(T_new, alpha=alpha)
+            # Reuse T_new buffer for err: T_new ← T_real - T_new (in-place)
+            T_new.neg_().add_(T_real)          # T_new is now (T_real_new - T_new_orig)
+            err_tensor = (alpha / (1 - alpha)) * T_new.norm()
 
         n_iter = i + 1
         _check_interval = 5  # sync with CPU every N iterations
-
-        # Compute metrics on GPU (no .item() sync) every iteration
-        err_tensor = torch.linalg.norm(T_real - T_prev)
 
         # Only sync to CPU at check intervals (reduces CUDA sync overhead)
         if n_iter % _check_interval == 0 or i == max_iter - 1 or i >= min_iter_before_converge:
@@ -882,6 +898,7 @@ def sampled_gw(
     if differentiable:
         _gm = grad_mode
         def sinkhorn_fn(a, b, C, reg, **kw):
+            kw.pop('_inplace_C', None)
             return _sinkhorn_differentiable(C, a, b, reg, grad_mode=_gm, **kw)
     else:
         sinkhorn_fn = _sinkhorn_torch
