@@ -55,6 +55,12 @@ shape correspondence, manifold alignment.
 
 ## News
 
+> **v0.4.1** (2026-04-09)  --  **Exact differentiable gradients** via implicit differentiation.
+> The previous "envelope theorem" backward was a frozen-potentials approximation with up to
+> 30x gradient error; now replaced by an adjoint system solved via Schur complement on the
+> Sinkhorn Jacobian. New `grad_mode` parameter (`"implicit"` default, `"unrolled"` alternative).
+> See [algorithm docs](https://chansigit.github.io/torchgw/algorithm.html) for the math.
+>
 > **v0.4.0** (2026-04-07)  --  Triton fused Sinkhorn (2-5x GPU speedup), mixed precision,
 > smart early stopping, Sinkhorn warm-start, Dijkstra caching, and 15 numerical stability fixes.
 > See [CHANGELOG.md](CHANGELOG.md).
@@ -207,13 +213,16 @@ T = sampled_gw(X, Y, multiscale=True, n_coarse=200)
 <details>
 <summary><b>Differentiable mode</b></summary>
 
-Use GW cost as a training loss (gradients via envelope theorem):
+Use GW transport as a differentiable layer (exact gradients via implicit differentiation):
 
 ```python
 C_feat = torch.cdist(encoder(X), encoder(Y))
 T = sampled_gw(fgw_alpha=1.0, C_linear=C_feat, differentiable=True)
 loss = (C_feat.detach() * T).sum()
-loss.backward()  # gradients flow to encoder parameters
+loss.backward()  # exact gradients flow to encoder parameters
+
+# For memory-constrained settings, unrolled autograd is also available:
+T = sampled_gw(..., differentiable=True, grad_mode="unrolled")
 ```
 
 </details>
