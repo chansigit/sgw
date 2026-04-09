@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import torch
 
@@ -184,10 +186,95 @@ def _sinkhorn_torch(
     return T
 
 
-class _SinkhornAutograd(torch.autograd.Function):
-    """Memory-efficient differentiable Sinkhorn.
+def _adjoint_sinkhorn_vjp(
+    T: torch.Tensor,
+    a: torch.Tensor,
+    b: torch.Tensor,
+    reg: float,
+    grad_T: torch.Tensor,
+    max_iter: int = 100,
+    tol: float = 1e-8,
+) -> torch.Tensor:
+    """Compute dL/dC via implicit differentiation at the Sinkhorn fixed point.
 
-    Gradient via envelope theorem: dL/dC = -T * grad_T / reg.
+    At convergence the Sinkhorn potentials satisfy:
+        F_1 = log u - log a + logsumexp(-C/ε + log v, dim=1) = 0
+        F_2 = log v - log b + logsumexp(-C/ε + log u, dim=0) = 0
+
+    The adjoint system (derived from the implicit function theorem) is:
+        [[I, P], [Q^T, I]] · [λ_u, λ_v] = [r_u, r_v]
+
+    where P_{ij} = T_{ij}/a_i, Q_{ij} = T_{ij}/b_j,
+          r_u = (G ⊙ T)·1, r_v = (G ⊙ T)^T·1, G = grad_T.
+
+    Solved by fixed-point iteration:
+        λ_u ← r_u - P · λ_v
+        λ_v ← r_v - Q^T · λ_u
+
+    Final VJP: dL/dC_{kl} = (T_{kl}/ε) · (λ_u_k/a_k + λ_v_l/b_l)
+    """
+    G_T = grad_T * T  # G ⊙ T, shape (N, K)
+    r_u = G_T.sum(dim=1)  # (N,)
+    r_v = G_T.sum(dim=0)  # (K,)
+
+    # Adjoint system:  [[diag(a), T], [T^T, diag(b)]] [λ_u, λ_v] = [r_u, r_v]
+    # Fixed-point iteration:
+    #   λ_u ← (r_u - T @ λ_v) / a
+    #   λ_v ← (r_v - T^T @ λ_u) / b
+
+    lambda_u = r_u / a
+    lambda_v = r_v / b
+
+    for _ in range(max_iter):
+        lambda_u_new = (r_u - T @ lambda_v) / a        # (N,)
+        lambda_v_new = (r_v - T.T @ lambda_u_new) / b   # (K,)
+
+        delta_u = (lambda_u_new - lambda_u).abs().max()
+        delta_v = (lambda_v_new - lambda_v).abs().max()
+        lambda_u = lambda_u_new
+        lambda_v = lambda_v_new
+
+        if max(delta_u.item(), delta_v.item()) < tol:
+            break
+
+    # VJP: dL/dC_{kl} = (T_{kl}/reg) * (-W_{kl} + λ_u_k + λ_v_l)
+    grad_C = (T / reg) * (-grad_T + lambda_u.unsqueeze(1) + lambda_v.unsqueeze(0))
+    return grad_C
+
+
+class _SinkhornImplicit(torch.autograd.Function):
+    """Differentiable Sinkhorn with exact gradient via implicit differentiation."""
+
+    @staticmethod
+    def forward(ctx, C, a, b, reg, max_iter, tol, check_every):
+        log_K = -C / reg
+        log_a = torch.log(a.clamp(min=1e-30))
+        log_b = torch.log(b.clamp(min=1e-30))
+
+        log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, 1.0,
+                                       max_iter, tol, check_every, a)
+        T = torch.exp(log_u.unsqueeze(1) + log_K + log_v.unsqueeze(0))
+
+        ctx.save_for_backward(T, a, b)
+        ctx.reg = reg
+        return T
+
+    @staticmethod
+    def backward(ctx, grad_T):
+        T, a, b = ctx.saved_tensors
+        grad_C = _adjoint_sinkhorn_vjp(T, a, b, ctx.reg, grad_T)
+        return grad_C, None, None, None, None, None, None
+
+
+class _SinkhornAutograd(torch.autograd.Function):
+    """Memory-efficient differentiable Sinkhorn (frozen-potentials approximation).
+
+    Backward uses dT/dC ≈ -T/ε (treating Sinkhorn potentials f, g as constants).
+    This is NOT the exact envelope-theorem gradient, which would require implicit
+    differentiation through the Sinkhorn fixed-point conditions.  The approximation
+    preserves gradient direction (positive cosine similarity with exact) but has
+    non-trivial magnitude error.  Exact gradients can be obtained by unrolling
+    Sinkhorn with standard PyTorch autograd at the cost of higher memory.
     """
 
     @staticmethod
@@ -211,10 +298,10 @@ class _SinkhornAutograd(torch.autograd.Function):
         return grad_C, None, None, None, None, None, None, None, None
 
 
-def _sinkhorn_differentiable(
+def _sinkhorn_unrolled(
+    C: torch.Tensor,
     a: torch.Tensor,
     b: torch.Tensor,
-    C: torch.Tensor,
     reg: float,
     max_iter: int = 100,
     tol: float = 5e-4,
@@ -224,16 +311,79 @@ def _sinkhorn_differentiable(
     verbose: bool = False,
     log_u_init: torch.Tensor | None = None,
     log_v_init: torch.Tensor | None = None,
+    grad_mode: str = "implicit",
 ) -> torch.Tensor:
-    """Differentiable Sinkhorn using custom autograd (memory-efficient)."""
-    if semi_relaxed:
-        raise NotImplementedError(
-            "differentiable=True is not supported with semi_relaxed=True: "
-            "the envelope theorem gradient is only valid for balanced Sinkhorn"
+    """Differentiable Sinkhorn via unrolled autograd (exact, higher memory)."""
+    log_K = -C / reg
+    log_a = torch.log(a.clamp(min=1e-30))
+    log_b = torch.log(b.clamp(min=1e-30))
+    log_u = log_u_init if log_u_init is not None else torch.zeros_like(log_a)
+    log_v = log_v_init if log_v_init is not None else torch.zeros_like(log_b)
+
+    for it in range(max_iter):
+        log_u = log_a - torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
+        log_v = log_b - torch.logsumexp(log_K + log_u.unsqueeze(1), dim=0)
+
+        if tol > 0 and (it + 1) % check_every == 0:
+            log_marginal = log_u + torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
+            marginal_err = torch.abs(torch.exp(log_marginal) - a).max().item()
+            if marginal_err < tol:
+                break
+
+    T = torch.exp(log_u.unsqueeze(1) + log_K + log_v.unsqueeze(0))
+    return T
+
+
+_VALID_GRAD_MODES = {"implicit", "unrolled", "approximate"}
+
+
+def _sinkhorn_differentiable(
+    C: torch.Tensor,
+    a: torch.Tensor,
+    b: torch.Tensor,
+    reg: float,
+    max_iter: int = 100,
+    tol: float = 5e-4,
+    check_every: int = 10,
+    semi_relaxed: bool = False,
+    rho: float = 1.0,
+    verbose: bool = False,
+    log_u_init: torch.Tensor | None = None,
+    log_v_init: torch.Tensor | None = None,
+    grad_mode: str = "implicit",
+) -> torch.Tensor:
+    """Differentiable Sinkhorn dispatcher.
+
+    Parameters
+    ----------
+    grad_mode : str
+        ``"implicit"`` (default) — exact gradient via adjoint system at fixed
+        point.  Memory-efficient: O(NK).
+        ``"unrolled"`` — exact gradient via unrolled PyTorch autograd.
+        Memory: O(NK * sinkhorn_iters).
+        ``"approximate"`` — frozen-potentials approximation (dT/dC ≈ -T/ε).
+        Fast but inexact.
+    """
+    if grad_mode not in _VALID_GRAD_MODES:
+        raise ValueError(
+            f"grad_mode must be one of {_VALID_GRAD_MODES}, got {grad_mode!r}"
         )
-    return _SinkhornAutograd.apply(
-        C, a, b, reg, max_iter, tol, check_every, semi_relaxed, rho,
-    )
+    if semi_relaxed and grad_mode != "approximate":
+        raise NotImplementedError(
+            f"grad_mode={grad_mode!r} is not supported with semi_relaxed=True. "
+            "Only grad_mode='approximate' is available for semi-relaxed Sinkhorn."
+        )
+
+    if grad_mode == "implicit":
+        return _SinkhornImplicit.apply(C, a, b, reg, max_iter, tol, check_every)
+    elif grad_mode == "unrolled":
+        return _sinkhorn_unrolled(C, a, b, reg, max_iter, tol, check_every,
+                                  semi_relaxed, rho, verbose,
+                                  log_u_init, log_v_init)
+    else:  # approximate
+        return _SinkhornAutograd.apply(
+            C, a, b, reg, max_iter, tol, check_every, semi_relaxed, rho,
+        )
 
 
 # ── Input coercion ──────────────────────────────────────────────────────
@@ -722,8 +872,20 @@ def sampled_gw(
     C_lin_device = C_linear_t.to(dtype=torch.float64, device=device) if C_linear_t is not None and fgw_alpha > 0 else None
 
     # Sinkhorn function
+    if differentiable and fgw_alpha == 0.0:
+        warnings.warn(
+            "differentiable=True with fgw_alpha=0 (pure GW): gradients cannot "
+            "flow because the GW cost matrix is built from precomputed graph "
+            "distances that are not part of the computation graph. Set "
+            "fgw_alpha > 0 with a differentiable C_linear to get useful gradients.",
+            stacklevel=2,
+        )
     ctx = torch.no_grad() if not differentiable else torch.enable_grad()
-    sinkhorn_fn = _sinkhorn_differentiable if differentiable else _sinkhorn_torch
+    if differentiable:
+        def sinkhorn_fn(a, b, C, reg, **kw):
+            return _sinkhorn_differentiable(C, a, b, reg, **kw)
+    else:
+        sinkhorn_fn = _sinkhorn_torch
 
     with ctx:
         T_out, err_list, n_iter, gw_cost_val = _gw_loop(
