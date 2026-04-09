@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "torchgw"
-version = "0.4.0"
+version = "0.4.1"
 description = "Fast Sampled Gromov-Wasserstein optimal transport solver — pure PyTorch, scalable, differentiable"
 readme = "README.md"
 license = { text = "Academic and Non-Commercial Use License" }

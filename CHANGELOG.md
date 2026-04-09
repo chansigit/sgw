@@ -2,6 +2,72 @@
 
 All notable changes to TorchGW are documented in this file.
 
+## [0.4.1] — 2026-04-09
+
+Exact differentiable gradients via implicit differentiation. Fixes a
+correctness bug where the previous "envelope theorem" backward produced
+gradients with up to 30x error (cosine similarity as low as 0.07).
+
+### Breaking Changes
+
+- Default gradient computation for `differentiable=True` is now **implicit
+  differentiation** (exact) instead of the old frozen-potentials approximation.
+  No API change needed — the new default is strictly better.
+
+### New Features
+
+- **`grad_mode` parameter** for `sampled_gw` — controls how gradients are
+  computed when `differentiable=True`:
+  - `"implicit"` (default): exact gradient via adjoint system at the Sinkhorn
+    fixed point. Solved via Schur complement on the Sinkhorn Jacobian.
+    Memory: O(NK + K^2). Same speed as the old approximate mode.
+  - `"unrolled"`: exact gradient via unrolled PyTorch autograd. Memory:
+    O(NK * sinkhorn_iters). Useful as fallback at extremely small epsilon.
+
+### Bug Fixes
+
+- **Gradient correctness** — The old backward formula `grad_C = -grad_T * T / reg`
+  treated Sinkhorn potentials as constants ("frozen-potentials"). This is a first-order
+  approximation that ignores how the potentials depend on C through the Sinkhorn
+  iterations. The new implicit differentiation backward solves the adjoint system
+  derived from the implicit function theorem at the Sinkhorn fixed point, giving
+  exact gradients.
+
+- **Adjoint solver stability** — Initial implementation used fixed-point iteration
+  for the adjoint system, which diverges when the spectral radius >= 1 (common at
+  small epsilon). Replaced with Schur complement direct solve on the Sinkhorn
+  Jacobian J^T (eigenvalues in [0,2], well-conditioned). Null space from potential
+  constant ambiguity removed via rank-1 correction (11^T/K).
+
+- **Warning for non-differentiable pure GW** — `differentiable=True` with
+  `fgw_alpha=0` now emits a warning, since gradients cannot flow through
+  precomputed graph distances.
+
+### Internal
+
+- `_SinkhornAutograd` renamed to `_SinkhornApproximate` (frozen-potentials,
+  used internally for semi-relaxed only)
+- New `_SinkhornImplicit` class (exact VJP via adjoint)
+- New `_sinkhorn_unrolled` function (exact VJP via autograd)
+- `_sinkhorn_differentiable` rewritten as dispatcher for the three backends
+
+### Tests
+
+- 8 new gradient correctness tests in `tests/test_sinkhorn_grad.py`:
+  implicit vs unrolled (rel_err < 2%), implicit vs finite differences,
+  descent direction, non-uniform marginals, approximate formula verification,
+  grad_mode validation
+- Integration tests for `grad_mode` through `sampled_gw`
+- 111 total tests, all passing
+
+### Documentation
+
+- `docs/algorithm.rst`: full derivation of implicit differentiation
+  (Jacobian structure, adjoint equation, Schur complement, null-space handling)
+- README: updated news, differentiable mode example with `grad_mode`
+
+---
+
 ## [0.4.0] — 2026-04-07
 
 Major performance and robustness release. **3-6x faster** on typical workloads,

@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://chansigit.github.io/torchgw/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-blue?logo=readthedocs&logoColor=white" alt="Documentation"></a>
   <a href="https://github.com/chansigit/torchgw"><img src="https://img.shields.io/badge/github-chansigit%2Ftorchgw-black?logo=github" alt="GitHub"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.4.0-green" alt="Version"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.4.1-green" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Non--Commercial-orange" alt="License"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white" alt="Python"></a>
   <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C?logo=pytorch&logoColor=white" alt="PyTorch"></a>
@@ -324,7 +324,7 @@ If you use TorchGW in your research, please cite:
   author = {Sijie Chen},
   title = {TorchGW: Fast Sampled Gromov-Wasserstein Optimal Transport},
   url = {https://github.com/chansigit/torchgw},
-  version = {0.4.0},
+  version = {0.4.1},
   year = {2026},
 }
 ```

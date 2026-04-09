@@ -12,7 +12,7 @@ TorchGW -- Fast Sampled Gromov-Wasserstein Optimal Transport
    :target: https://github.com/chansigit/torchgw
    :alt: GitHub
 
-.. image:: https://img.shields.io/badge/version-0.4.0-green
+.. image:: https://img.shields.io/badge/version-0.4.1-green
    :target: https://github.com/chansigit/torchgw/blob/main/CHANGELOG.md
    :alt: Version
 
@@ -51,14 +51,14 @@ single-cell multi-omics integration, and cross-domain graph matching.
 - **Differentiable** — use GW cost as a training loss with autograd support
 - **No POT dependency** at runtime — pure PyTorch + scipy + scikit-learn
 
-What's New in v0.4.0
+What's New in v0.4.1
 ---------------------
 
-- Triton fused Sinkhorn kernels (2–5x GPU speedup)
-- Mixed precision support (``mixed_precision=True``)
-- Cost plateau early stopping
-- Sinkhorn warm-start across GW iterations
-- 15 numerical stability and correctness fixes
+- **Exact differentiable gradients** via implicit differentiation at the Sinkhorn
+  fixed point — fixes a correctness bug where the old backward produced gradients
+  with up to 30x error
+- New ``grad_mode`` parameter: ``"implicit"`` (default, exact) or ``"unrolled"``
+- Full theory derivation in :doc:`algorithm`
 - See :doc:`changelog` for details
 
 .. toctree::
@@ -119,7 +119,7 @@ If you use TorchGW in your research, please cite:
      author = {Sijie Chen},
      title = {TorchGW: Fast Sampled Gromov-Wasserstein Optimal Transport},
      url = {https://github.com/chansigit/torchgw},
-     version = {0.4.0},
+     version = {0.4.1},
      year = {2026},
    }
 
