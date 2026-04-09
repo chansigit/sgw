@@ -249,6 +249,110 @@ def test_differentiable_gradient_flows():
     assert C_feat.grad.shape == C_feat.shape
 
 
+def test_differentiable_warning_pure_gw(two_datasets):
+    """differentiable=True with fgw_alpha=0 should emit a warning."""
+    import warnings
+    X_src, X_tgt = two_datasets
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        T = sampled_gw(
+            X_src, X_tgt,
+            differentiable=True, fgw_alpha=0.0,
+            M=10, max_iter=3, epsilon=0.1,
+        )
+        assert any("fgw_alpha=0" in str(warning.message) for warning in w), \
+            "Should warn when differentiable=True with pure GW"
+
+
+def test_differentiable_implicit_matches_unrolled():
+    """sampled_gw with grad_mode='implicit' should match 'unrolled'."""
+    torch.manual_seed(42)
+    N, K = 8, 10
+    C0 = torch.rand(N, K, dtype=torch.float64)
+    W = torch.randn(N, K, dtype=torch.float64)
+    kw = dict(fgw_alpha=1.0, differentiable=True, M=10, max_iter=5,
+              epsilon=0.1, device=torch.device("cpu"))
+
+    C1 = C0.clone().requires_grad_(True)
+    T1 = sampled_gw(C_linear=C1, grad_mode="implicit", **kw)
+    (W * T1).sum().backward()
+    grad_implicit = C1.grad.clone()
+
+    C2 = C0.clone().requires_grad_(True)
+    T2 = sampled_gw(C_linear=C2, grad_mode="unrolled", **kw)
+    (W * T2).sum().backward()
+    grad_unrolled = C2.grad.clone()
+
+    cos_sim = torch.nn.functional.cosine_similarity(
+        grad_implicit.flatten(), grad_unrolled.flatten(), dim=0,
+    )
+    assert cos_sim > 0.95, f"implicit vs unrolled cosine_sim={cos_sim:.4f}"
+
+
+def test_differentiable_approximate_is_inexact():
+    """grad_mode='approximate' should have non-trivial error vs exact."""
+    torch.manual_seed(42)
+    N, K = 8, 10
+    C0 = torch.rand(N, K, dtype=torch.float64)
+    W = torch.randn(N, K, dtype=torch.float64)
+    kw = dict(fgw_alpha=1.0, differentiable=True, M=10, max_iter=5,
+              epsilon=0.1, device=torch.device("cpu"))
+
+    C1 = C0.clone().requires_grad_(True)
+    T1 = sampled_gw(C_linear=C1, grad_mode="implicit", **kw)
+    (W * T1).sum().backward()
+    grad_exact = C1.grad.clone()
+
+    C2 = C0.clone().requires_grad_(True)
+    T2 = sampled_gw(C_linear=C2, grad_mode="approximate", **kw)
+    (W * T2).sum().backward()
+    grad_approx = C2.grad.clone()
+
+    rel_err = (grad_exact - grad_approx).norm() / grad_exact.norm()
+    assert rel_err > 0.1, f"Expected non-trivial error, got {rel_err:.4f}"
+
+
+def test_differentiable_gradient_fgw_blend():
+    """Gradient should flow correctly through an FGW blend (0 < fgw_alpha < 1)."""
+    torch.manual_seed(99)
+    N, K, d = 40, 45, 3
+    X = torch.randn(N, d, dtype=torch.float64)
+    Y = torch.randn(K, d, dtype=torch.float64)
+    C_feat = torch.cdist(X, Y).to(torch.float64).requires_grad_(True)
+
+    T = sampled_gw(
+        X.numpy(), Y.numpy(),
+        fgw_alpha=0.5, C_linear=C_feat,
+        differentiable=True, M=10, max_iter=5, epsilon=0.1,
+        device=torch.device("cpu"),
+    )
+    loss = T.sum()
+    loss.backward()
+    assert C_feat.grad is not None, "Gradient should flow through FGW blend"
+    assert not torch.all(C_feat.grad == 0), "Gradient should be non-trivial"
+
+
+def test_differentiable_gradient_nonuniform_marginals():
+    """Gradient should work with non-uniform marginals."""
+    torch.manual_seed(55)
+    N, K = 10, 12
+    C = torch.rand(N, K, dtype=torch.float64).requires_grad_(True)
+    p = torch.softmax(torch.randn(N, dtype=torch.float64), dim=0)
+    q = torch.softmax(torch.randn(K, dtype=torch.float64), dim=0)
+
+    T = sampled_gw(
+        p=p, q=q,
+        fgw_alpha=1.0, C_linear=C,
+        differentiable=True, M=10, max_iter=5, epsilon=0.1,
+        device=torch.device("cpu"),
+    )
+    loss = (C.detach() * T).sum()
+    loss.backward()
+    assert C.grad is not None
+    assert C.grad.shape == C.shape
+    assert not torch.all(C.grad == 0), "Gradient should be non-trivial"
+
+
 def test_lambda_ema_basic(two_datasets):
     """lambda_ema_beta should produce a valid transport plan."""
     X_src, X_tgt = two_datasets

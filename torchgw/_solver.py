@@ -266,15 +266,11 @@ class _SinkhornImplicit(torch.autograd.Function):
         return grad_C, None, None, None, None, None, None
 
 
-class _SinkhornAutograd(torch.autograd.Function):
-    """Memory-efficient differentiable Sinkhorn (frozen-potentials approximation).
+class _SinkhornApproximate(torch.autograd.Function):
+    """Differentiable Sinkhorn with frozen-potentials approximation.
 
-    Backward uses dT/dC ≈ -T/ε (treating Sinkhorn potentials f, g as constants).
-    This is NOT the exact envelope-theorem gradient, which would require implicit
-    differentiation through the Sinkhorn fixed-point conditions.  The approximation
-    preserves gradient direction (positive cosine similarity with exact) but has
-    non-trivial magnitude error.  Exact gradients can be obtained by unrolling
-    Sinkhorn with standard PyTorch autograd at the cost of higher memory.
+    Backward: dT/dC ≈ -T/ε (treats potentials as constants).
+    Fast but inexact — use _SinkhornImplicit for exact gradients.
     """
 
     @staticmethod
@@ -381,7 +377,7 @@ def _sinkhorn_differentiable(
                                   semi_relaxed, rho, verbose,
                                   log_u_init, log_v_init)
     else:  # approximate
-        return _SinkhornAutograd.apply(
+        return _SinkhornApproximate.apply(
             C, a, b, reg, max_iter, tol, check_every, semi_relaxed, rho,
         )
 
@@ -777,6 +773,7 @@ def sampled_gw(
     verbose_every: int = 20,
     log: bool = False,
     differentiable: bool = False,
+    grad_mode: str = "implicit",
     semi_relaxed: bool = False,
     rho: float = 1.0,
     multiscale: bool = False,
@@ -813,6 +810,11 @@ def sampled_gw(
         Return (T, log_dict) if True.
     differentiable : bool
         Keep computation graph for backprop.
+    grad_mode : str
+        Gradient computation mode when ``differentiable=True``.
+        ``"implicit"`` (default): exact via adjoint at Sinkhorn fixed point.
+        ``"unrolled"``: exact via unrolled autograd (higher memory).
+        ``"approximate"``: frozen-potentials approximation (fast, inexact).
     semi_relaxed : bool
         Relax target marginal via KL penalty.
     rho : float
@@ -882,8 +884,9 @@ def sampled_gw(
         )
     ctx = torch.no_grad() if not differentiable else torch.enable_grad()
     if differentiable:
+        _gm = grad_mode
         def sinkhorn_fn(a, b, C, reg, **kw):
-            return _sinkhorn_differentiable(C, a, b, reg, **kw)
+            return _sinkhorn_differentiable(C, a, b, reg, grad_mode=_gm, **kw)
     else:
         sinkhorn_fn = _sinkhorn_torch
 
