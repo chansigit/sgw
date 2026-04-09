@@ -357,17 +357,16 @@ def _sinkhorn_differentiable(
         point.  Memory-efficient: O(NK).
         ``"unrolled"`` — exact gradient via unrolled PyTorch autograd.
         Memory: O(NK * sinkhorn_iters).
-        ``"approximate"`` — frozen-potentials approximation (dT/dC ≈ -T/ε).
-        Fast but inexact.
     """
     if grad_mode not in _VALID_GRAD_MODES:
         raise ValueError(
             f"grad_mode must be one of {_VALID_GRAD_MODES}, got {grad_mode!r}"
         )
-    if semi_relaxed and grad_mode != "approximate":
-        raise NotImplementedError(
-            f"grad_mode={grad_mode!r} is not supported with semi_relaxed=True. "
-            "Only grad_mode='approximate' is available for semi-relaxed Sinkhorn."
+    if semi_relaxed:
+        # Implicit/unrolled not yet implemented for semi-relaxed;
+        # fall back to frozen-potentials internally.
+        return _SinkhornApproximate.apply(
+            C, a, b, reg, max_iter, tol, check_every, semi_relaxed, rho,
         )
 
     if grad_mode == "implicit":
@@ -813,8 +812,9 @@ def sampled_gw(
     grad_mode : str
         Gradient computation mode when ``differentiable=True``.
         ``"implicit"`` (default): exact via adjoint at Sinkhorn fixed point.
-        ``"unrolled"``: exact via unrolled autograd (higher memory).
-        ``"approximate"``: frozen-potentials approximation (fast, inexact).
+        Memory-efficient: O(NK).
+        ``"unrolled"``: exact via unrolled PyTorch autograd.
+        Memory: O(NK * sinkhorn_iters).
     semi_relaxed : bool
         Relax target marginal via KL penalty.
     rho : float
