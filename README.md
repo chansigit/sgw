@@ -107,17 +107,27 @@ print(f"Transport plan: {T.shape}, total mass: {T.sum():.4f}")
 
 ## Benchmark
 
-Spiral (2D) to Swiss roll (3D) alignment on NVIDIA L40S:
+Spiral (2D) to Swiss roll (3D) alignment on NVIDIA L40S, `mixed_precision=True`, landmark distances:
 
-| Scale | Method | Time | Spearman rho |
-|:------|:-------|-----:|:------------:|
-| 400 vs 500 | POT `ot.gromov_wasserstein` | 1.6 s | 0.999 |
-| 400 vs 500 | **TorchGW** | **0.46 s** | 0.999 |
-| 4000 vs 5000 | POT `ot.gromov_wasserstein` | 183 s | 0.999 |
-| 4000 vs 5000 | **TorchGW** precomputed | **5.1 s** | 0.998 |
-| 4000 vs 5000 | **TorchGW** landmark | **1.0 s** | 0.999 |
+| Scale | Time | Spearman rho | GPU Memory |
+|:------|-----:|:------------:|-----------:|
+| 4,000 x 5,000 | **2.4 s** | 0.999 | 1.1 GB |
+| 10,000 x 12,000 | **3.0 s** | 0.999 | 6.7 GB |
+| 15,000 x 18,000 | **6.6 s** | 0.999 | 15 GB |
+| 20,000 x 25,000 | **12.7 s** | 0.999 | 28 GB |
+| 25,000 x 30,000 | **18.0 s** | 0.999 | 42 GB |
 
-> At 4000x5000 with landmark distances, TorchGW is **up to ~175x faster** than POT with equal quality.
+> Alignment quality (Spearman >= 0.999) is maintained across all scales.
+> At 4000x5000, TorchGW is **~175x faster** than POT (1.0s vs 183s).
+
+<details>
+<summary>Reproduce</summary>
+
+```bash
+python examples/benchmark_scale.py
+```
+
+</details>
 
 <details>
 <summary>Benchmark plots</summary>
