@@ -107,19 +107,35 @@ print(f"Transport plan: {T.shape}, total mass: {T.sum():.4f}")
 
 ## Benchmark
 
-Spiral (2D) to Swiss roll (3D) alignment on NVIDIA L40S, `mixed_precision=True`, landmark distances:
+Spiral (2D) to Swiss roll (3D) alignment, `mixed_precision=True`, landmark distances:
+
+**NVIDIA H100 80GB HBM3:**
+
+| Scale | Time | Spearman rho | GPU Memory |
+|:------|-----:|:------------:|-----------:|
+| 4,000 x 5,000 | **0.8 s** | 0.999 | 0.7 GB |
+| 10,000 x 12,000 | **4.1 s** | 0.999 | 3.9 GB |
+| 20,000 x 25,000 | **4.6 s** | 0.999 | 16 GB |
+| 30,000 x 35,000 | **9.3 s** | 0.999 | 34 GB |
+| 40,000 x 50,000 | **17 s** | 0.999 | 64 GB |
+| 45,000 x 45,000 | **18 s** | 0.999 | 65 GB |
+
+<details>
+<summary><b>NVIDIA L40S 48GB</b></summary>
 
 | Scale | Time | Spearman rho | GPU Memory |
 |:------|-----:|:------------:|-----------:|
 | 4,000 x 5,000 | **2.4 s** | 0.999 | 1.1 GB |
 | 10,000 x 12,000 | **3.0 s** | 0.999 | 6.7 GB |
 | 20,000 x 25,000 | **12 s** | 0.999 | 18 GB |
-| 25,000 x 30,000 | **17 s** | 0.999 | 24 GB |
 | 30,000 x 35,000 | **25 s** | 0.999 | 34 GB |
 | 35,000 x 40,000 | **34 s** | 0.999 | 45 GB |
 
+</details>
+
 > Alignment quality (Spearman >= 0.999) is maintained across all scales.
 > At 4000x5000, TorchGW is **~175x faster** than POT (1.0s vs 183s).
+> Max scale is bounded by GPU memory for the N*K transport plan (~80% VRAM utilization).
 
 <details>
 <summary>Reproduce</summary>
