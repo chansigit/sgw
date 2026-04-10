@@ -306,30 +306,73 @@ Full API documentation: [chansigit.github.io/torchgw](https://chansigit.github.i
 
 ## How It Works
 
+### The idea
+
+[Gromov-Wasserstein](https://arxiv.org/abs/1805.09114) finds a coupling
+between two point clouds by comparing **distances within each space**
+rather than distances across spaces.  This means the two inputs can live
+in completely different dimensions -- a 2D spiral can be aligned to a
+3D Swiss roll, or a gene expression matrix to a chromatin accessibility
+matrix.
+
+Standard GW solvers compute the full N*N and K*K pairwise distance
+matrices and an O(N*K*(N+K)) cost tensor at each step, which is
+prohibitive beyond a few thousand points.  TorchGW replaces this with a
+**stochastic approximation**: sample M anchor pairs from the current
+transport plan, compute distances only for those anchors, and build a
+low-variance cost estimate in O(NKM) -- making each iteration orders of
+magnitude cheaper.
+
+### Algorithm
+
 ```
-                    ┌─────────────────────────────────────────────┐
-                    │              GW Main Loop                   │
-                    │                                             │
-  T_init ──────────►│  1. GPU multinomial sampling (M anchors)    │
-                    │  2. Distance computation (Dijkstra/landmark)│
-                    │  3. GW cost matrix assembly                 │
-                    │  4. Triton fused Sinkhorn projection        │
-                    │  5. Momentum update + warm-start            │
-                    │  6. Cost plateau convergence check          │
-                    │                                             │
-                    │  ↺ repeat until converged                   │
-                    └──────────────────────┬──────────────────────┘
-                                           │
-                                           ▼
-                                     T* (N × K)
+  Source X (N points, D dims)          Target Y (K points, D' dims)
+         │                                      │
+         │    build kNN graph + Dijkstra /       │
+         │    landmark distances                 │
+         ▼                                       ▼
+  ┌──────────────────────────────────────────────────┐
+  │                   GW Main Loop                   │
+  │                                                  │
+  │  1. Sample M anchor pairs (i,j) from current T  │
+  │     (GPU multinomial, weighted by coupling mass) │
+  │                                                  │
+  │  2. Compute graph distances from anchors         │
+  │     D_left (N × M), D_tgt (K × M)               │
+  │                                                  │
+  │  3. Assemble N × K GW cost matrix:               │
+  │     Λ = mean(D²_left) - 2/M · D_left·D_tgt' +  │
+  │         mean(D²_tgt)                             │
+  │                                                  │
+  │  4. Sinkhorn projection: solve regularized OT    │
+  │     on Λ to get T_new (Triton fused kernels,     │
+  │     log-domain for numerical stability)          │
+  │                                                  │
+  │  5. Momentum blend: T ← (1-α)T + α·T_new       │
+  │     (warm-start Sinkhorn potentials for next     │
+  │     iteration)                                   │
+  │                                                  │
+  │  6. Check convergence: cost plateau detection    │
+  │                                                  │
+  │  ↺ repeat until converged                        │
+  └──────────────────────┬───────────────────────────┘
+                         ▼
+                   T* (N × K)
+            optimal transport plan
 ```
 
-**Acceleration stack:**
-- **Triton kernels** -- fused row/column logsumexp, fused T materialization, fused marginal check
-- **Warm-start** -- reuse Sinkhorn potentials across iterations
-- **Mixed precision** -- float32 log-domain + float64 output
-- **Dijkstra cache** -- avoid redundant SSSP across iterations
-- **Cost plateau early stopping** -- stop when converged, not at max_iter
+### Why it's fast
+
+| Technique | What it does | Speedup |
+|:----------|:-------------|:--------|
+| **Sampled cost** | O(NKM) instead of O(NK(N+K)) per iteration | 10-100x |
+| **Triton Sinkhorn** | Fused GPU kernels: single-pass logsumexp, no intermediate N*K allocations | 2-5x |
+| **Warm-start** | Reuse Sinkhorn potentials (log u, log v) across GW iterations | 2-3x fewer Sinkhorn steps |
+| **Mixed precision** | float32 Sinkhorn in log domain (numerically safe), float64 output | up to 2x on consumer GPUs |
+| **Dijkstra cache** | Cache per-node shortest paths, FIFO eviction | avoids redundant graph traversals |
+| **Cost plateau detection** | Stop when GW cost EMA plateaus, not when noisy ‖T-T_prev‖ < tol | saves 50-80% of max_iter |
+
+See the [algorithm documentation](https://chansigit.github.io/torchgw/algorithm.html) for the full mathematical formulation, including the semi-relaxed extension and differentiable gradient computation.
 
 ---
 
