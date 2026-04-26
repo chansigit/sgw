@@ -91,9 +91,9 @@ def _sinkhorn_loop_pytorch(
 
     for it in range(max_iter):
         log_u_raw = log_a - torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
-        log_u = log_u_raw if is_balanced_a else tau_a * log_u_raw + (1 - tau_a) * log_u
+        log_u = log_u_raw if is_balanced_a else tau_a * log_u_raw
         log_v_raw = log_b - torch.logsumexp(log_K + log_u.unsqueeze(1), dim=0)
-        log_v = log_v_raw if is_balanced_b else tau_b * log_v_raw + (1 - tau_b) * log_v
+        log_v = log_v_raw if is_balanced_b else tau_b * log_v_raw
 
         if tol > 0 and (it + 1) % check_every == 0:
             log_marginal = log_u + torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
@@ -116,25 +116,28 @@ def _sinkhorn_torch(
     tol: float = 5e-4,
     check_every: int = 10,
     semi_relaxed: bool = False,
-    rho: float = 1.0,
+    rho_a: float = 1.0,
+    rho_b: float = 1.0,
     _inplace_C: bool = False,
     verbose: bool = False,
     log_u_init: torch.Tensor | None = None,
     log_v_init: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Log-domain Sinkhorn for numerical stability. Pure PyTorch.
-
-    Operates in whatever dtype the inputs are given (float32 or float64).
-    Dtype selection is handled by the caller (_gw_loop via sink_dtype).
-    Supports warm-starting via log_u_init/log_v_init from a previous solve.
-    """
+    """Log-domain Sinkhorn supporting balanced, single-side semi-relaxed,
+    and fully-unbalanced via (rho_a, rho_b)."""
     log_K = C.neg_().div_(reg) if _inplace_C else -C / reg
     log_a = torch.log(a.clamp(min=1e-30))
     log_b = torch.log(b.clamp(min=1e-30))
-    tau = rho / (rho + reg) if semi_relaxed else 1.0
+    if semi_relaxed:
+        tau_a = rho_a / (rho_a + reg)
+        tau_b = rho_b / (rho_b + reg)
+    else:
+        tau_a = tau_b = 1.0
 
-    log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, 1.0, tau, max_iter, tol, check_every, a,
-                                   verbose=verbose, log_u_init=log_u_init, log_v_init=log_v_init)
+    log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, tau_a, tau_b,
+                                   max_iter, tol, check_every, a,
+                                   verbose=verbose,
+                                   log_u_init=log_u_init, log_v_init=log_v_init)
 
     # Fused T materialization (Triton on CUDA, PyTorch fallback)
     if log_K.is_cuda:
@@ -236,111 +239,77 @@ class _SinkhornApproximate(torch.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, C, a, b, reg, max_iter, tol, check_every, semi_relaxed, rho):
+    def forward(ctx, C, a, b, reg, max_iter, tol, check_every, semi_relaxed, rho_a, rho_b):
+        if semi_relaxed:
+            tau_a = rho_a / (rho_a + reg)
+            tau_b = rho_b / (rho_b + reg)
+        else:
+            tau_a = tau_b = 1.0
         log_K = -C / reg
         log_a = torch.log(a.clamp(min=1e-30))
         log_b = torch.log(b.clamp(min=1e-30))
-        tau = rho / (rho + reg) if semi_relaxed else 1.0
-
-        log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, 1.0, tau, max_iter, tol, check_every, a)
+        log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, tau_a, tau_b,
+                                       max_iter, tol, check_every, a, False)
         T = torch.exp(log_u.unsqueeze(1) + log_K + log_v.unsqueeze(0))
-
-        ctx.save_for_backward(T)
+        ctx.save_for_backward(T, a, b)
         ctx.reg = reg
         return T
 
     @staticmethod
     def backward(ctx, grad_T):
-        (T,) = ctx.saved_tensors
+        (T, a, b) = ctx.saved_tensors
         grad_C = -grad_T * T / ctx.reg
-        return grad_C, None, None, None, None, None, None, None, None
+        return grad_C, None, None, None, None, None, None, None, None, None
 
 
 def _sinkhorn_unrolled(
-    C: torch.Tensor,
-    a: torch.Tensor,
-    b: torch.Tensor,
-    reg: float,
-    max_iter: int = 100,
-    tol: float = 5e-4,
-    check_every: int = 10,
-    semi_relaxed: bool = False,
-    rho: float = 1.0,
-    verbose: bool = False,
-    log_u_init: torch.Tensor | None = None,
-    log_v_init: torch.Tensor | None = None,
-    grad_mode: str = "implicit",
-) -> torch.Tensor:
-    """Differentiable Sinkhorn via unrolled autograd (exact, higher memory)."""
+    C, a, b, reg, max_iter=100, tol=5e-4, check_every=10,
+    semi_relaxed=False, rho_a: float = 1.0, rho_b: float = 1.0,
+    grad_mode="autograd", verbose=False,
+):
+    if semi_relaxed:
+        tau_a = rho_a / (rho_a + reg)
+        tau_b = rho_b / (rho_b + reg)
+    else:
+        tau_a = tau_b = 1.0
     log_K = -C / reg
     log_a = torch.log(a.clamp(min=1e-30))
     log_b = torch.log(b.clamp(min=1e-30))
-    log_u = log_u_init if log_u_init is not None else torch.zeros_like(log_a)
-    log_v = log_v_init if log_v_init is not None else torch.zeros_like(log_b)
-
+    log_u = torch.zeros_like(log_a)
+    log_v = torch.zeros_like(log_b)
+    is_a_balanced = (tau_a == 1.0)
+    is_b_balanced = (tau_b == 1.0)
     for it in range(max_iter):
-        log_u = log_a - torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
-        log_v = log_b - torch.logsumexp(log_K + log_u.unsqueeze(1), dim=0)
-
+        log_u_raw = log_a - torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
+        log_u = log_u_raw if is_a_balanced else tau_a * log_u_raw
+        log_v_raw = log_b - torch.logsumexp(log_K + log_u.unsqueeze(1), dim=0)
+        log_v = log_v_raw if is_b_balanced else tau_b * log_v_raw
         if tol > 0 and (it + 1) % check_every == 0:
             log_marginal = log_u + torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
-            marginal_err = torch.abs(torch.exp(log_marginal) - a).max().item()
-            if marginal_err < tol:
+            if torch.abs(torch.exp(log_marginal) - a).max().item() < tol:
                 break
-
-    T = torch.exp(log_u.unsqueeze(1) + log_K + log_v.unsqueeze(0))
-    return T
+    return torch.exp(log_u.unsqueeze(1) + log_K + log_v.unsqueeze(0))
 
 
 _VALID_GRAD_MODES = {"implicit", "unrolled", "approximate"}
 
 
 def _sinkhorn_differentiable(
-    C: torch.Tensor,
-    a: torch.Tensor,
-    b: torch.Tensor,
-    reg: float,
-    max_iter: int = 100,
-    tol: float = 5e-4,
-    check_every: int = 10,
-    semi_relaxed: bool = False,
-    rho: float = 1.0,
-    verbose: bool = False,
-    log_u_init: torch.Tensor | None = None,
-    log_v_init: torch.Tensor | None = None,
-    grad_mode: str = "implicit",
-) -> torch.Tensor:
-    """Differentiable Sinkhorn dispatcher.
-
-    Parameters
-    ----------
-    grad_mode : str
-        ``"implicit"`` (default) — exact gradient via adjoint system at fixed
-        point.  Memory-efficient: O(NK).
-        ``"unrolled"`` — exact gradient via unrolled PyTorch autograd.
-        Memory: O(NK * sinkhorn_iters).
-    """
-    if grad_mode not in _VALID_GRAD_MODES:
-        raise ValueError(
-            f"grad_mode must be one of {_VALID_GRAD_MODES}, got {grad_mode!r}"
-        )
+    C, a, b, reg, max_iter=100, tol=5e-4, check_every=10,
+    semi_relaxed=False, rho_a: float = 1.0, rho_b: float = 1.0,
+    grad_mode="autograd", verbose=False,
+):
     if semi_relaxed:
-        # Implicit/unrolled not yet implemented for semi-relaxed;
-        # fall back to frozen-potentials internally.
-        return _SinkhornApproximate.apply(
-            C, a, b, reg, max_iter, tol, check_every, semi_relaxed, rho,
-        )
-
+        return _sinkhorn_unrolled(C, a, b, reg, max_iter, tol, check_every,
+                                  semi_relaxed, rho_a, rho_b, grad_mode, verbose)
     if grad_mode == "implicit":
         return _SinkhornImplicit.apply(C, a, b, reg, max_iter, tol, check_every)
-    elif grad_mode == "unrolled":
-        return _sinkhorn_unrolled(C, a, b, reg, max_iter, tol, check_every,
-                                  semi_relaxed, rho, verbose,
-                                  log_u_init, log_v_init)
-    else:  # approximate
+    if grad_mode == "approximate":
         return _SinkhornApproximate.apply(
-            C, a, b, reg, max_iter, tol, check_every, semi_relaxed, rho,
+            C, a, b, reg, max_iter, tol, check_every, semi_relaxed, rho_a, rho_b,
         )
+    return _sinkhorn_unrolled(C, a, b, reg, max_iter, tol, check_every,
+                              semi_relaxed, rho_a, rho_b, grad_mode, verbose)
 
 
 # ── Input coercion ──────────────────────────────────────────────────────
