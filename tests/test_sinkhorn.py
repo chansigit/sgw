@@ -106,7 +106,7 @@ def test_sinkhorn_pytorch_fallback_balanced():
     log_b = torch.log(torch.ones(K, dtype=torch.float64) / K)
 
     log_u, log_v = _sinkhorn_loop_pytorch(
-        log_K, log_a, log_b, tau=1.0, max_iter=200, tol=1e-6,
+        log_K, log_a, log_b, tau_a=1.0, tau_b=1.0, max_iter=200, tol=1e-6,
         check_every=10, a=a,
     )
     # Verify marginal constraint
@@ -123,7 +123,7 @@ def test_sinkhorn_pytorch_fallback_unbalanced():
     log_b = torch.log(torch.ones(K, dtype=torch.float64) / K)
 
     log_u, log_v = _sinkhorn_loop_pytorch(
-        log_K, log_a, log_b, tau=0.5, max_iter=200, tol=1e-6,
+        log_K, log_a, log_b, tau_a=1.0, tau_b=0.5, max_iter=200, tol=1e-6,
         check_every=10, a=a,
     )
     assert torch.all(torch.isfinite(log_u))
@@ -181,3 +181,27 @@ def test_sinkhorn_torch_float32():
     assert T.shape == (N, K)
     assert torch.all(T >= 0)
     assert torch.all(torch.isfinite(T))
+
+
+def test_sinkhorn_unbalanced_two_sided_marginals():
+    """With small rho_a == rho_b, both source and target marginals relax."""
+    import torch
+    from torchgw._solver import _sinkhorn_torch
+    n, m = 30, 40
+    a = torch.full((n,), 1.0 / n, dtype=torch.float64)
+    b = torch.full((m,), 1.0 / m, dtype=torch.float64)
+    rng = torch.Generator().manual_seed(0)
+    C = torch.rand(n, m, generator=rng, dtype=torch.float64)
+    reg = 0.05
+    # Balanced reference
+    T_balanced = _sinkhorn_torch(a, b, C.clone(), reg, max_iter=500, tol=0,
+                                 semi_relaxed=False, rho_a=1.0, rho_b=1.0)
+    # Fully unbalanced (small rho relaxes both sides)
+    T_unbal = _sinkhorn_torch(a, b, C.clone(), reg, max_iter=500, tol=0,
+                              semi_relaxed=True, rho_a=0.1, rho_b=0.1)
+    src_err_balanced = (T_balanced.sum(dim=1) - a).abs().max().item()
+    src_err_unbal = (T_unbal.sum(dim=1) - a).abs().max().item()
+    assert src_err_balanced < 1e-3, f"balanced source err {src_err_balanced}"
+    assert src_err_unbal > 5e-3, f"unbalanced source should drift, got {src_err_unbal}"
+    tgt_err_unbal = (T_unbal.sum(dim=0) - b).abs().max().item()
+    assert tgt_err_unbal > 5e-3, f"unbalanced target should drift, got {tgt_err_unbal}"

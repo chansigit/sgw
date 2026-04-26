@@ -45,69 +45,35 @@ def _get_compiled_sinkhorn():
 
 
 def _sinkhorn_loop(
-    log_K: torch.Tensor,
-    log_a: torch.Tensor,
-    log_b: torch.Tensor,
-    tau: float,
-    max_iter: int,
-    tol: float,
-    check_every: int,
-    a: torch.Tensor,
-    verbose: bool = False,
+    log_K: torch.Tensor, log_a: torch.Tensor, log_b: torch.Tensor,
+    tau_a: float, tau_b: float, max_iter: int, tol: float, check_every: int,
+    a: torch.Tensor, verbose: bool = False,
     log_u_init: torch.Tensor | None = None,
     log_v_init: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Run log-domain Sinkhorn iterations. Returns (log_u, log_v).
-
-    Dispatch order:
-      1. Triton fused kernels (if available + CUDA) — fastest
-      2. torch.compile batched iterations (if available + CUDA) — fast
-      3. Pure PyTorch fallback — always works
-    """
-    # Try Triton path first (single-pass fused logsumexp, no intermediate N×K)
-    if log_K.is_cuda:
+    """Dispatch order: Triton (CUDA only, balanced or single-tau semi-relaxed) →
+    pure PyTorch fallback (handles both sides via tau_a, tau_b)."""
+    fully_unbalanced = (tau_a != 1.0) and (tau_b != 1.0) and (tau_a != tau_b or tau_a < 1.0)
+    if log_K.is_cuda and not fully_unbalanced:
         try:
             from torchgw._triton_sinkhorn import triton_sinkhorn_loop
-            return triton_sinkhorn_loop(log_K, log_a, log_b, tau, max_iter, tol, check_every, a,
-                                        verbose, log_u_init=log_u_init, log_v_init=log_v_init)
+            tau_legacy = tau_b  # legacy single-tau was on the v side
+            return triton_sinkhorn_loop(log_K, log_a, log_b, tau_legacy, max_iter,
+                                        tol, check_every, a, verbose,
+                                        log_u_init=log_u_init, log_v_init=log_v_init)
         except (ImportError, RuntimeError):
             pass
-
-        # Try torch.compile path
-        try:
-            iter_fn = _get_compiled_sinkhorn()
-        except Exception:
-            iter_fn = None
-
-        if iter_fn is not None and not verbose and check_every > 1 and tol > 0:
-            log_u = log_u_init if log_u_init is not None else torch.zeros_like(log_a)
-            log_v = log_v_init if log_v_init is not None else torch.zeros_like(log_b)
-            is_balanced = (tau == 1.0)
-            done = 0
-            while done < max_iter:
-                batch = min(check_every, max_iter - done)
-                log_u, log_v = iter_fn(
-                    log_K, log_a, log_b, log_u, log_v,
-                    is_balanced, tau, batch,
-                )
-                done += batch
-                if tol > 0 and done % check_every == 0:
-                    log_marginal = log_u + torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
-                    marginal_err = torch.abs(torch.exp(log_marginal) - a).max().item()
-                    if marginal_err < tol:
-                        break
-            return log_u, log_v
-
-    # Pure PyTorch fallback
-    return _sinkhorn_loop_pytorch(log_K, log_a, log_b, tau, max_iter, tol, check_every, a,
-                                   verbose, log_u_init=log_u_init, log_v_init=log_v_init)
+    return _sinkhorn_loop_pytorch(log_K, log_a, log_b, tau_a, tau_b,
+                                   max_iter, tol, check_every, a, verbose,
+                                   log_u_init=log_u_init, log_v_init=log_v_init)
 
 
 def _sinkhorn_loop_pytorch(
     log_K: torch.Tensor,
     log_a: torch.Tensor,
     log_b: torch.Tensor,
-    tau: float,
+    tau_a: float,
+    tau_b: float,
     max_iter: int,
     tol: float,
     check_every: int,
@@ -116,18 +82,18 @@ def _sinkhorn_loop_pytorch(
     log_u_init: torch.Tensor | None = None,
     log_v_init: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Pure PyTorch Sinkhorn fallback (CPU or when Triton/compile unavailable)."""
+    """Pure PyTorch Sinkhorn fallback. tau_a, tau_b control KL damping per side
+    (1.0 = strict balanced; <1 = unbalanced KL relaxation)."""
     log_u = log_u_init if log_u_init is not None else torch.zeros_like(log_a)
     log_v = log_v_init if log_v_init is not None else torch.zeros_like(log_b)
-    is_balanced = (tau == 1.0)
+    is_balanced_a = (tau_a == 1.0)
+    is_balanced_b = (tau_b == 1.0)
 
     for it in range(max_iter):
-        log_u = log_a - torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
+        log_u_raw = log_a - torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
+        log_u = log_u_raw if is_balanced_a else tau_a * log_u_raw + (1 - tau_a) * log_u
         log_v_raw = log_b - torch.logsumexp(log_K + log_u.unsqueeze(1), dim=0)
-        if is_balanced:
-            log_v = log_v_raw
-        else:
-            log_v = tau * log_v_raw + (1 - tau) * log_v
+        log_v = log_v_raw if is_balanced_b else tau_b * log_v_raw + (1 - tau_b) * log_v
 
         if tol > 0 and (it + 1) % check_every == 0:
             log_marginal = log_u + torch.logsumexp(log_K + log_v.unsqueeze(0), dim=1)
@@ -138,7 +104,6 @@ def _sinkhorn_loop_pytorch(
                 if verbose:
                     print(f"    sinkhorn converged at {it+1} (err={marginal_err:.4e})")
                 break
-
     return log_u, log_v
 
 
@@ -168,7 +133,7 @@ def _sinkhorn_torch(
     log_b = torch.log(b.clamp(min=1e-30))
     tau = rho / (rho + reg) if semi_relaxed else 1.0
 
-    log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, tau, max_iter, tol, check_every, a,
+    log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, 1.0, tau, max_iter, tol, check_every, a,
                                    verbose=verbose, log_u_init=log_u_init, log_v_init=log_v_init)
 
     # Fused T materialization (Triton on CUDA, PyTorch fallback)
@@ -248,7 +213,7 @@ class _SinkhornImplicit(torch.autograd.Function):
         log_a = torch.log(a.clamp(min=1e-30))
         log_b = torch.log(b.clamp(min=1e-30))
 
-        log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, 1.0,
+        log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, 1.0, 1.0,
                                        max_iter, tol, check_every, a)
         T = torch.exp(log_u.unsqueeze(1) + log_K + log_v.unsqueeze(0))
 
@@ -277,7 +242,7 @@ class _SinkhornApproximate(torch.autograd.Function):
         log_b = torch.log(b.clamp(min=1e-30))
         tau = rho / (rho + reg) if semi_relaxed else 1.0
 
-        log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, tau, max_iter, tol, check_every, a)
+        log_u, log_v = _sinkhorn_loop(log_K, log_a, log_b, 1.0, tau, max_iter, tol, check_every, a)
         T = torch.exp(log_u.unsqueeze(1) + log_K + log_v.unsqueeze(0))
 
         ctx.save_for_backward(T)
@@ -801,6 +766,7 @@ def sampled_gw(
     n_coarse: int | None = None,
     lambda_ema_beta: float | None = None,
     mixed_precision: bool = False,
+    T_init: np.ndarray | torch.Tensor | None = None,
 ) -> torch.Tensor | tuple[torch.Tensor, dict]:
     """Sampled Gromov-Wasserstein alignment between two datasets.
 
@@ -876,21 +842,26 @@ def sampled_gw(
     else:
         q_real = torch.ones(K, device=device, dtype=torch.float64) / K
 
-    # Multiscale warm start
-    T_init = _maybe_multiscale(
-        multiscale, n_coarse, X_source, X_target, N, K,
-        dist_source, dist_target, C_linear_t, fgw_alpha,
-        distance_mode, n_landmarks, device, p_real, q_real,
-        solver_fn=sampled_gw,
-        solver_kwargs=dict(
-            s_shared=s_shared, M=M, alpha=alpha, max_iter=max_iter, tol=tol,
-            epsilon=epsilon, k=k, min_iter_before_converge=min_iter_before_converge,
-            verbose=False, log=False, differentiable=differentiable,
-            semi_relaxed=semi_relaxed, rho=rho,
-        ),
-    )
-    if T_init is None:
-        T_init = torch.outer(p_real, q_real)
+    # User-supplied warm start takes precedence; else multiscale; else uniform.
+    if T_init is not None:
+        if isinstance(T_init, np.ndarray):
+            T_init = torch.from_numpy(T_init)
+        T_init = T_init.to(device=device, dtype=torch.float64)
+    else:
+        T_init = _maybe_multiscale(
+            multiscale, n_coarse, X_source, X_target, N, K,
+            dist_source, dist_target, C_linear_t, fgw_alpha,
+            distance_mode, n_landmarks, device, p_real, q_real,
+            solver_fn=sampled_gw,
+            solver_kwargs=dict(
+                s_shared=s_shared, M=M, alpha=alpha, max_iter=max_iter, tol=tol,
+                epsilon=epsilon, k=k, min_iter_before_converge=min_iter_before_converge,
+                verbose=False, log=False, differentiable=differentiable,
+                semi_relaxed=semi_relaxed, rho=rho,
+            ),
+        )
+        if T_init is None:
+            T_init = torch.outer(p_real, q_real)
 
     # C_linear on device
     C_lin_device = C_linear_t.to(dtype=torch.float64, device=device) if C_linear_t is not None and fgw_alpha > 0 else None
