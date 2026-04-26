@@ -173,7 +173,7 @@ def test_triton_sinkhorn_loop_matches_pytorch(dtype):
     log_b = torch.log(b)
 
     log_u_pt, log_v_pt = _sinkhorn_loop_pytorch(
-        log_K, log_a, log_b, tau=1.0, max_iter=100, tol=1e-6,
+        log_K, log_a, log_b, tau_a=1.0, tau_b=1.0, max_iter=100, tol=1e-6,
         check_every=10, a=a,
     )
     log_u_tr, log_v_tr = triton_sinkhorn_loop(

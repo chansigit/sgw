@@ -116,6 +116,7 @@ def _sinkhorn_torch(
     tol: float = 5e-4,
     check_every: int = 10,
     semi_relaxed: bool = False,
+    rho: float | None = None,        # legacy single-side semi-relaxed alias
     rho_a: float = 1.0,
     rho_b: float = 1.0,
     _inplace_C: bool = False,
@@ -124,7 +125,16 @@ def _sinkhorn_torch(
     log_v_init: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Log-domain Sinkhorn supporting balanced, single-side semi-relaxed,
-    and fully-unbalanced via (rho_a, rho_b)."""
+    and fully-unbalanced via (rho_a, rho_b).
+
+    Backward-compatible: if `rho` is provided (and `rho_a`/`rho_b` are at
+    their defaults), legacy single-side semi-relaxed semantics is used
+    (damping on the v/target side only — original behavior pre-PR).
+    """
+    if rho is not None:
+        if rho_a != 1.0 or rho_b != 1.0:
+            raise ValueError("pass either rho (legacy) OR rho_a/rho_b, not both")
+        rho_a, rho_b = 1.0, rho   # legacy: damping only on v-side (target)
     log_K = C.neg_().div_(reg) if _inplace_C else -C / reg
     log_a = torch.log(a.clamp(min=1e-30))
     log_b = torch.log(b.clamp(min=1e-30))
@@ -264,9 +274,14 @@ class _SinkhornApproximate(torch.autograd.Function):
 
 def _sinkhorn_unrolled(
     C, a, b, reg, max_iter=100, tol=5e-4, check_every=10,
-    semi_relaxed=False, rho_a: float = 1.0, rho_b: float = 1.0,
+    semi_relaxed=False, rho: float | None = None,
+    rho_a: float = 1.0, rho_b: float = 1.0,
     grad_mode="autograd", verbose=False,
 ):
+    if rho is not None:
+        if rho_a != 1.0 or rho_b != 1.0:
+            raise ValueError("pass either rho (legacy) OR rho_a/rho_b, not both")
+        rho_a, rho_b = 1.0, rho
     if semi_relaxed:
         tau_a = rho_a / (rho_a + reg)
         tau_b = rho_b / (rho_b + reg)
@@ -296,12 +311,20 @@ _VALID_GRAD_MODES = {"implicit", "unrolled", "approximate"}
 
 def _sinkhorn_differentiable(
     C, a, b, reg, max_iter=100, tol=5e-4, check_every=10,
-    semi_relaxed=False, rho_a: float = 1.0, rho_b: float = 1.0,
+    semi_relaxed=False, rho: float | None = None,
+    rho_a: float = 1.0, rho_b: float = 1.0,
     grad_mode="autograd", verbose=False,
 ):
+    if rho is not None:
+        if rho_a != 1.0 or rho_b != 1.0:
+            raise ValueError("pass either rho (legacy) OR rho_a/rho_b, not both")
+        rho_a, rho_b = 1.0, rho
+    if grad_mode not in {"autograd", "implicit", "approximate", "unrolled"}:
+        raise ValueError(f"invalid grad_mode={grad_mode!r}; "
+                         "must be one of 'autograd', 'implicit', 'approximate', 'unrolled'")
     if semi_relaxed:
         return _sinkhorn_unrolled(C, a, b, reg, max_iter, tol, check_every,
-                                  semi_relaxed, rho_a, rho_b, grad_mode, verbose)
+                                  semi_relaxed, None, rho_a, rho_b, grad_mode, verbose)
     if grad_mode == "implicit":
         return _SinkhornImplicit.apply(C, a, b, reg, max_iter, tol, check_every)
     if grad_mode == "approximate":
@@ -309,7 +332,7 @@ def _sinkhorn_differentiable(
             C, a, b, reg, max_iter, tol, check_every, semi_relaxed, rho_a, rho_b,
         )
     return _sinkhorn_unrolled(C, a, b, reg, max_iter, tol, check_every,
-                              semi_relaxed, rho_a, rho_b, grad_mode, verbose)
+                              semi_relaxed, None, rho_a, rho_b, grad_mode, verbose)
 
 
 # ── Input coercion ──────────────────────────────────────────────────────
@@ -731,6 +754,7 @@ def sampled_gw(
     differentiable: bool = False,
     grad_mode: str = "implicit",
     semi_relaxed: bool = False,
+    rho: float | None = None,        # legacy single-side semi-relaxed alias
     rho_a: float = 1.0,
     rho_b: float = 1.0,
     multiscale: bool = False,
@@ -797,6 +821,10 @@ def sampled_gw(
     T : Tensor (ns, nt)
     log_dict : dict (only if log=True)
     """
+    if rho is not None:
+        if rho_a != 1.0 or rho_b != 1.0:
+            raise ValueError("pass either rho (legacy) OR rho_a/rho_b, not both")
+        rho_a, rho_b = 1.0, rho   # legacy: damping only on v-side (target)
     (X_source, X_target, p, q, dist_source, dist_target, C_linear_t,
      N, K, provider, device) = _prepare_inputs(
         X_source, X_target, p, q, dist_source, dist_target, C_linear,
@@ -850,7 +878,9 @@ def sampled_gw(
     if differentiable:
         _gm = grad_mode
         def sinkhorn_fn(a, b, C, reg, **kw):
-            kw.pop('_inplace_C', None)
+            # _sinkhorn_differentiable does not support warm-start kwargs
+            for _stripped in ('_inplace_C', 'log_u_init', 'log_v_init', 'verbose'):
+                kw.pop(_stripped, None)
             return _sinkhorn_differentiable(C, a, b, reg, grad_mode=_gm, **kw)
     else:
         sinkhorn_fn = _sinkhorn_torch
@@ -906,6 +936,7 @@ def sampled_lowrank_gw(
     verbose_every: int = 20,
     log: bool = False,
     semi_relaxed: bool = False,
+    rho: float | None = None,        # legacy single-side semi-relaxed alias
     rho_a: float = 1.0,
     rho_b: float = 1.0,
     multiscale: bool = False,
@@ -953,6 +984,10 @@ def sampled_lowrank_gw(
     T : Tensor (ns, nt)
     log_dict : dict (only if log=True)
     """
+    if rho is not None:
+        if rho_a != 1.0 or rho_b != 1.0:
+            raise ValueError("pass either rho (legacy) OR rho_a/rho_b, not both")
+        rho_a, rho_b = 1.0, rho
     if semi_relaxed:
         raise ValueError("semi_relaxed is not supported for low-rank Sinkhorn")
     if rho_a != rho_b:
